@@ -1,9 +1,9 @@
 
 build:
-	@go build -o bin/restapi
+	@go build -o bin/atomicbase
 
 run: build
-	@./bin/restapi
+	@./bin/atomicbase
 
 test:
 	@go test -v ./...

@@ -8,6 +8,7 @@ Atomicbase is still in the very early stages of development. It is not ready for
 
 Here is a checklist for development of Atomicbase:
 - [ ] REST API
+- [ ] CLI for server and DB management
 - [ ] File Storage
 - [ ] User management
 - [ ] Admin dashboard
