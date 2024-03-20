@@ -15,6 +15,16 @@ Here is a checklist for development of Atomicbase:
 - [ ] Client SDK
 - [ ] Realtime
 
+### Plan
+
+The plan is for each project to have one central database which is the default database for queries to come through. Then if you want to access another database you can send the database name and token in the request. This makes it very easy to manage as many databases as you need all through one interface.
+
+This makes a pattern like database per user significantly easier because you can just hold the name of the user's database in a JWT and then when they sign in use the api to retrieve data from their database.
+
+Aside from that the vision is to create something similar to Supabase in that it provides an sql-like interface that is much simpler and faster to use than writing everything yourself.
+
+The plan for UI is to write everything using Templ and HTMX so that it is all 100% golang.
+
 ## Why Atomicbase?
 
 Atomicbase is small but incredibly powerful. It gives you the freedom to either embed your sqlite database or manage unlimited databases with ease using Turso. This makes multi-tenant backends easier than ever before.
@@ -22,7 +32,8 @@ Atomicbase is small but incredibly powerful. It gives you the freedom to either 
 Atomicbase is also very fast because it is written 100% in go.
 
 Atomicbase is fully open source and it's single executable includes:
-- Embedded sqlite database if you are not using Turso
+- A central sqlite database
+- Ability to connect to any libsql database over the network
 - RESTful sql-like API to simplify communicating with your databases
 - File storage that syncs with your database
 - Simple admin dashboard UI
