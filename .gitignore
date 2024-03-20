@@ -1,3 +1,4 @@
 schema_cache
 .env
 bin
+test.db
