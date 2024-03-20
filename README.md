@@ -21,6 +21,7 @@ Atomicbase is small but incredibly powerful. It gives you the freedom to either 
 Atomicbase is also very fast because it is written 100% in go.
 
 Atomicbase is fully open source and it's single executable includes:
+- Embedded sqlite database if you are not using Turso
 - RESTful sql-like API to simplify communicating with your databases
 - File storage that syncs with your database
 - Simple admin dashboard UI
@@ -40,4 +41,4 @@ The only thing that I ask is that if you profit off of it significantly please c
 All contributions are appreciated including:
 - Contributing to the source code
 - Reporting issues and suggesting new features
-- Contributing to the buymeacoffee (coming on release)
+- Contributing to the buymeacoffee (coming soon)
