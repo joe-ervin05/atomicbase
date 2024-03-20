@@ -4,7 +4,7 @@ Atomic Base is a scalable Libsql-based backend in a single file.
 
 ## Development
 
-Atomic Base still has a lot of work to be done before it is complete. It is not ready for use in projects yet.
+Atomic Base is still in the very early stages of development. It is not ready for use in projects yet.
 
 Here is the checklist for development of Atomic Base:
 - [ ] REST API
