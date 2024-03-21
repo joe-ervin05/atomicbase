@@ -40,7 +40,7 @@ Atomicbase is fully open source and it's single executable includes:
 
 ## Notes
 
-Atomicbase is heavily inspired by Pocketbase and Supabase but with the twist of Libsql to be incredibly flexible. 
+Atomicbase is heavily inspired by Pocketbase and Supabase but with the twist of Libsql to be incredibly flexible.
 
 The other big difference between Atomicbase and Pocketbase is that Atomicbase attempts to be more sql-like in its API so that it feels more familiar and easy to control. This is very similar to Supabase but without quite as many features because Sqlite has less features on purpose.
 

@@ -1,9 +1,7 @@
 package main
 
 import (
-	"log"
-
-	"github.com/gofiber/fiber/v3"
+	"github.com/joe-ervin05/atomicbase/api"
 	"github.com/joho/godotenv"
 )
 
@@ -13,15 +11,8 @@ func init() {
 
 func main() {
 
-	app := fiber.New()
+	srvr := api.NewApiServer(":3000")
 
-	app.Get("/v1/:table", handleGetTable())
+	srvr.Run()
 
-	app.Post("/v1/:table", handlePostTable())
-
-	app.Delete("/v1/:table", handleDeleteTable())
-
-	app.Post("/v1/udf/:funcName", handlePostUdf())
-
-	log.Fatal(app.Listen(":3000"))
 }
