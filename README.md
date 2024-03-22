@@ -1,6 +1,7 @@
 
 ## What is Atomicbase?
 
+> [!IMPORTANT]  
 > **Atomicbase is in very early stages of development.** It is not ready for use in projects yet.
 > The more help we can get from the community, the faster it can be launched! Help of any form is greatly appreciated.
 
