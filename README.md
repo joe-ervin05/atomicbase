@@ -9,7 +9,7 @@ Atomicbase is small but incredibly powerful. It is a scalable libsql & go backen
 
 With Atomicbase and Turso, you can scale any application globally with ease.
 
-> Atomicbase is not affiliated with Turso, I just think its awesome new tech to build a project around.
+> Atomicbase is not affiliated with Turso, I just think its awesome modern tech to build a project around!
 
 Atomicbase is fully open source and it's single executable will include:
 - A central sqlite database
@@ -31,7 +31,7 @@ Here is a checklist for development of Atomicbase:
 
 ### Plan
 
-The plan is for each project to have one central database which is the default database for queries to come through. Then if you want to access another database you can send the database name in the request. This makes it very easy to manage as many databases as you need all through one interface. The db name is essentially just a pointer to the database you want to access.
+The plan is for each project to have one central database which is the default database for api requests to come through. Then if you want to access another database you can send the database name in the request. This makes it very easy to manage as many databases as you need all through one interface.
 
 This makes a pattern like database per user significantly easier because you can just hold the name of the user's database in a JWT and then when they sign in use the api to retrieve data from their database.
 
