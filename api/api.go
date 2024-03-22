@@ -36,7 +36,6 @@ func (srvr *ApiServer) Run() {
 func (srvr *ApiServer) handleGetRows() fiber.Handler {
 	return db.WithDb(func(c fiber.Ctx, dao db.Database) error {
 		query, args, err := querybuilder.SelectRows(c.Queries(), c.Params("table"))
-		fmt.Println(query)
 		if err != nil {
 			return err
 		}
@@ -94,7 +93,7 @@ func (srvr *ApiServer) handleDeleteRows() fiber.Handler {
 func (srvr *ApiServer) handlePostUdf() fiber.Handler {
 	return db.WithDb(func(c fiber.Ctx, dao db.Database) error {
 
-		// handle requests for user defined functions
+		fmt.Println(dao.Schema.Fks)
 
 		return nil
 	})

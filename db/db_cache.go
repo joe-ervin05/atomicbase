@@ -9,8 +9,6 @@ import (
 
 var lock sync.Mutex
 
-type SchemaCache struct{}
-
 func saveSchema(data SchemaCache) error {
 	// prevent concurrent writes
 	lock.Lock()
@@ -18,12 +16,12 @@ func saveSchema(data SchemaCache) error {
 
 	var buf bytes.Buffer
 
-	err := os.Mkdir("schema_cache", os.ModePerm)
+	err := os.MkdirAll("atomicdata", os.ModePerm)
 	if err != nil {
 		return err
 	}
 
-	file, err := os.Create("schema_cache/schema.gob")
+	file, err := os.Create("atomicdata/schema.gob")
 	if err != nil {
 		return err
 	}
@@ -43,7 +41,7 @@ func saveSchema(data SchemaCache) error {
 
 func loadSchema() (SchemaCache, error) {
 
-	fData, err := os.ReadFile("schema_cache/schema.gob")
+	fData, err := os.ReadFile("atomicdata/schema.gob")
 	if err != nil {
 		return SchemaCache{}, err
 	}

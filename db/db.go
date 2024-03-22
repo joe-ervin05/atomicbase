@@ -15,7 +15,24 @@ type dbHandler func(fiber.Ctx, Database) error
 
 type Database struct {
 	Client *sql.DB
+	Schema SchemaCache
 }
+
+type SchemaCache struct {
+	Tables TblMap
+	Pks    PkMap
+	Fks    []Fk
+}
+
+type Fk struct {
+	Table      string
+	References string
+	From       string
+	To         string
+}
+
+type TblMap map[string]map[string]string
+type PkMap map[string]string
 
 func WithDb(h dbHandler) fiber.Handler {
 	return func(c fiber.Ctx) error {
@@ -44,15 +61,14 @@ func WithDb(h dbHandler) fiber.Handler {
 func initDb(name, org, token string) (Database, error) {
 	var url string
 
-	if token == "" {
-		url = "file:" + name
+	if name == "" {
+		url = "file:primary.db"
 	} else {
 		authToken := token[7:]
 		url = fmt.Sprintf("libsql://%s-%s.turso.io?authToken=%s", name, org, authToken)
 	}
 
 	client, err := sql.Open("libsql", url)
-
 	if err != nil {
 		fmt.Println(err)
 		return Database{}, err
@@ -64,23 +80,34 @@ func initDb(name, org, token string) (Database, error) {
 		return Database{}, err
 	}
 
-	// scheme, err := loadSchema()
-	// if err != nil {
-	// 	_, err := querySchema(client)
-	// 	if err != nil {
-	// 		fmt.Println(err)
-	// 		return nil, err
-	// 	}
-	// 	saveSchema(scheme)
-	// }
+	schema, err := loadSchema()
+	if err != nil {
+		pks, err := schemaPks(client)
+		if err != nil {
+			return Database{}, err
+		}
+		fks, err := schemaFks(client)
+		if err != nil {
+			return Database{}, err
+		}
+		cols, err := schemaCols(client)
+		if err != nil {
+			return Database{}, err
+		}
 
-	// fmt.Println(scheme)
+		schema = SchemaCache{cols, pks, fks}
 
-	return Database{client}, nil
+		err = saveSchema(schema)
+		if err != nil {
+			return Database{}, err
+		}
+	}
+
+	return Database{client, schema}, nil
 }
 
 // runs a query and returns a json bytes encoding of the result
-func (dao Database) QueryJson(query string, args ...any) ([]byte, error) {
+func (dao Database) QueryMap(query string, args ...any) ([]interface{}, error) {
 	rows, err := dao.Client.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -146,31 +173,103 @@ func (dao Database) QueryJson(query string, args ...any) ([]byte, error) {
 		finalRows = append(finalRows, masterData)
 	}
 
-	return json.Marshal(finalRows)
+	return finalRows, nil
 }
 
-// func querySchema(db *sql.DB) (schemaCache, error) {
+func (dao Database) QueryJson(query string, args ...any) ([]byte, error) {
+	jsn, err := dao.QueryMap(query, args...)
+	if err != nil {
+		return nil, err
+	}
 
-// 	var scm schemaCache
+	return json.Marshal(jsn)
 
-// 	rows, err := db.Query(`SELECT 1.name FROM PRAGMA table_info("users") as 1 where 1.pk <> 0`)
-// 	if err != nil {
-// 		return scm, err
-// 	}
-// 	defer rows.Close()
+}
 
-// 	var sqls []int
+func schemaFks(db *sql.DB) ([]Fk, error) {
 
-// 	for rows.Next() {
-// 		var sql int
+	var fks []Fk
 
-// 		if err := rows.Scan(&sql); err != nil {
-// 			return scm, err
-// 		}
+	rows, err := db.Query(`
+		SELECT m.name as "table", p."table" as "references", p."from", p."to"
+		FROM sqlite_master m
+		JOIN pragma_foreign_key_list(m.name) p ON m.name != p."table"
+		WHERE m.type = 'table'
+		ORDER BY m.name;
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
-// 		fmt.Println(sql)
-// 		sqls = append(sqls, sql)
-// 	}
+	for rows.Next() {
+		var from, to, references, table sql.NullString
 
-// 	return scm, rows.Err()
-// }
+		rows.Scan(&table, &references, &from, &to)
+
+		fks = append(fks, Fk{table.String, references.String, from.String, to.String})
+
+	}
+
+	return fks, err
+}
+
+func schemaCols(db *sql.DB) (TblMap, error) {
+
+	tblMap := make(TblMap)
+
+	rows, err := db.Query(`
+		SELECT m.name, l.name as col, l.type as colType
+		FROM sqlite_master m
+		JOIN pragma_table_info(m.name) l
+		WHERE m.type = 'table'
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var col sql.NullString
+		var colType sql.NullString
+		var name sql.NullString
+
+		rows.Scan(&name, &col, &colType)
+
+		if tblMap[name.String] == nil {
+			tblMap[name.String] = make(map[string]string)
+		}
+		tblMap[name.String][col.String] = colType.String
+	}
+
+	return tblMap, rows.Err()
+
+}
+
+func schemaPks(db *sql.DB) (map[string]string, error) {
+
+	pkMap := make(map[string]string)
+
+	rows, err := db.Query(`
+		SELECT m.name, l.name as pk
+		FROM sqlite_master m
+		JOIN pragma_table_info(m.name) l ON l.pk = 1
+		WHERE m.type = 'table'
+		ORDER BY m.name;
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var pk sql.NullString
+		var name sql.NullString
+
+		rows.Scan(&name, &pk)
+		pkMap[name.String] = pk.String
+	}
+
+	return pkMap, rows.Err()
+
+}
