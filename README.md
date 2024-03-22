@@ -7,6 +7,10 @@
 
 Atomicbase is small but incredibly powerful. It is a scalable libsql & go backend in a single file.
 
+With Atomicbase and Turso, you can scale any application globally with ease.
+
+> Atomicbase is not affiliated with Turso, I just think its awesome new tech to build a project around.
+
 Atomicbase is fully open source and it's single executable will include:
 - A central sqlite database
 - Support for accessing unlimited databases with Turso
