@@ -40,6 +40,8 @@ func (srvr *ApiServer) handleGetRows() fiber.Handler {
 			return err
 		}
 
+		fmt.Println(query, args)
+
 		j, err := dao.QueryJson(query, args...)
 		if err != nil {
 			return err

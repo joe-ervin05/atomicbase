@@ -12,6 +12,7 @@ It is recommended that you
 
 - Go 1.22 +
 - Templ cli (for making changes to the UI)
+- gcc compiler (for CGO for the sqlite driver)
 
 If you have not already, fork the main repository and clone your fork so that you can work locally:
 
@@ -22,5 +23,7 @@ If you have not already, fork the main repository and clone your fork so that yo
 ## Local development
 
 Once you have forked and cloned the repository, use `make run` to build and start the go server.
+
+Also make sure you have CGO enabled. use `export CGO_ENABLED=1` on Linux or `set CGO_ENABLED=1` on Windows.
 
 this will start a server at `http://localhost:3000` with the full project. That's pretty much it!

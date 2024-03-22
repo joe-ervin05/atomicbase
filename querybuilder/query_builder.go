@@ -170,10 +170,6 @@ func buildReturning(param string) (string, error) {
 	keys := splitNotQuotes(param, ',')
 
 	for i, key := range keys {
-		err := isSanitized(key)
-		if err != nil {
-			return "", err
-		}
 
 		if i == len(keys)-1 {
 			query += key + " "
@@ -219,17 +215,11 @@ func buildSelect(param string, table string) (string, error) {
 
 	query := "SELECT "
 
-	for i, col := range cols {
-
-		if i != len(cols)-1 {
-			query += col + ", "
-		} else {
-			query += col + " "
-		}
-
+	for _, col := range cols {
+		query += fmt.Sprintf(`"%s", `, col)
 	}
 
-	query += "FROM " + table + " "
+	query = query[:len(query)-2] + " FROM " + table + " "
 
 	if len(rels) == 0 {
 		return query, nil
@@ -277,28 +267,15 @@ func parseSelect(str string) ([]string, map[string]string, error) {
 			inQuotes = !inQuotes
 		case '(':
 
-			err := isSanitized(currStr)
-			if err != nil {
-				return cols, relationMap, err
-			}
-
 			prevTable = currTable
 			currTable = currStr
 			currStr = ""
 		case ')':
-			err := isSanitized(currStr)
-			if err != nil {
-				return cols, relationMap, err
-			}
 
 			cols = append(cols, dotSeparate(currTable, currStr))
 			currTable = prevTable
 
 		case ',':
-			err := isSanitized(currStr)
-			if err != nil {
-				return cols, relationMap, err
-			}
 
 			cols = append(cols, dotSeparate(currTable, currStr))
 			currStr = ""
@@ -308,10 +285,6 @@ func parseSelect(str string) ([]string, map[string]string, error) {
 	}
 
 	if currStr != "" {
-		err := isSanitized(currStr)
-		if err != nil {
-			return cols, relationMap, err
-		}
 		cols = append(cols, dotSeparate(currTable, currStr))
 	}
 
@@ -329,10 +302,6 @@ func buildOrder(param string) (string, error) {
 
 	for i, col := range orderBy {
 		keys := splitNotQuotes(col, '.')
-		err := isSanitized(keys[0])
-		if err != nil {
-			return "", err
-		}
 
 		if len(keys) > 1 {
 
@@ -379,11 +348,6 @@ func buildWhere(params map[string]string) (string, []any, error) {
 			hasWhere = true
 		} else {
 			continue
-		}
-
-		err := isSanitized(name)
-		if err != nil {
-			return "", nil, err
 		}
 
 		query += name + " "
@@ -445,38 +409,6 @@ func mapOperator(str string) string {
 	}
 
 	return operators[str]
-}
-
-func isSanitized(param string) error {
-
-	if param == "" {
-		return errors.New("the requested url has an empty parameter")
-	}
-
-	inQuotes := false
-
-	for _, v := range param {
-		if v == '"' {
-			inQuotes = !inQuotes
-			continue
-		}
-
-		switch v {
-		case ';':
-			return charErr(";")
-		case '-':
-			return charErr("-")
-		case '.':
-			return charErr(".")
-		}
-	}
-
-	return nil
-
-}
-
-func charErr(char string) error {
-	return fmt.Errorf("the query you constructed contains a '%s' where it should not be. Use url encoded double quotes (%%22) if you need special characters in your value", char)
 }
 
 func dotSeparate(x, y string) string {
