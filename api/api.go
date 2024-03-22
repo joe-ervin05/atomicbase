@@ -57,7 +57,6 @@ func (srvr *ApiServer) handlePostRows() fiber.Handler {
 		upsert := c.Get("Prefer") == "resolution=merge-duplicates"
 
 		query, args, err := querybuilder.InsertRows(bodyBytes, c.Queries(), c.Params("table"), upsert)
-		fmt.Println(query, args)
 		if err != nil {
 			return err
 		}
@@ -93,7 +92,7 @@ func (srvr *ApiServer) handleDeleteRows() fiber.Handler {
 func (srvr *ApiServer) handlePostUdf() fiber.Handler {
 	return db.WithDb(func(c fiber.Ctx, dao db.Database) error {
 
-		fmt.Println(dao.Schema.Fks)
+		// handle user defined function requestss
 
 		return nil
 	})

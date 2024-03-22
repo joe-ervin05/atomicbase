@@ -17,7 +17,7 @@ Here is a checklist for development of Atomicbase:
 
 ### Plan
 
-The plan is for each project to have one central database which is the default database for queries to come through. Then if you want to access another database you can send the database name and token in the request. This makes it very easy to manage as many databases as you need all through one interface.
+The plan is for each project to have one central database which is the default database for queries to come through. Then if you want to access another database you can send the database name in the request. This makes it very easy to manage as many databases as you need all through one interface. The db name is essentially just a pointer to the database you want to access.
 
 This makes a pattern like database per user significantly easier because you can just hold the name of the user's database in a JWT and then when they sign in use the api to retrieve data from their database.
 
@@ -27,9 +27,11 @@ The plan for UI is to write everything using Templ and HTMX so that it is all 10
 
 ## Why Atomicbase?
 
-Atomicbase is small but incredibly powerful. It gives you the freedom to either embed your sqlite database or manage unlimited databases with ease using Turso. This makes multi-tenant backends easier than ever before.
+Atomicbase is small but incredibly powerful. It starts with a primary embedded sqlite database. You can store all of your data there or you can use it to connect other databases over the network using Turso. This makes multi-tenant backends easier than ever before.
 
-Atomicbase is also very fast because it is written 100% in go.
+You can also just use the primary database by itself and get similar scalability to Pocketbase. This gives you the ability to host all your data in one place but the flexibility to expand if you want or need to.
+
+Atomicbase is also very fast because it is written 100% in go and the primary database doesn't experience any network latency since it is embedded with your server.
 
 Atomicbase is fully open source and it's single executable includes:
 - A central sqlite database

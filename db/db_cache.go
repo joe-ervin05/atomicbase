@@ -9,7 +9,7 @@ import (
 
 var lock sync.Mutex
 
-func saveSchema(data SchemaCache) error {
+func saveSchema(schema SchemaCache) error {
 	// prevent concurrent writes
 	lock.Lock()
 	defer lock.Unlock()
@@ -29,7 +29,7 @@ func saveSchema(data SchemaCache) error {
 
 	enc := gob.NewEncoder(&buf)
 
-	err = enc.Encode(data)
+	err = enc.Encode(schema)
 	if err != nil {
 		return err
 	}
@@ -48,10 +48,10 @@ func loadSchema() (SchemaCache, error) {
 	buf := bytes.NewBuffer(fData)
 	dec := gob.NewDecoder(buf)
 
-	var s SchemaCache
+	var schema SchemaCache
 
-	err = dec.Decode(&s)
+	err = dec.Decode(&schema)
 
-	return s, err
+	return schema, err
 
 }
