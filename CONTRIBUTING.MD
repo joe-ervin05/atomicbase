@@ -10,9 +10,9 @@ It is recommended that you
 
 ## Prerequisites
 
-- Go 1.22 +
-- Templ cli (for making changes to the UI)
-- gcc compiler (for CGO for the sqlite driver)
+- [Go 1.22 +](https://go.dev/doc/install)
+- [Templ cli (for making changes to the UI)](https://templ.guide/quick-start/installation)
+- [Gcc compiler (for CGO for the sqlite driver)](https://jmeubank.github.io/tdm-gcc/articles/2021-05/10.3.0-release)
 
 If you have not already, fork the main repository and clone your fork so that you can work locally:
 
