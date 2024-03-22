@@ -7,7 +7,7 @@
 
 Atomicbase is small but incredibly powerful. It is a scalable libsql & go backend in a single file.
 
-Atomicbase is fully open source and it's single executable includes:
+Atomicbase is fully open source and it's single executable will include:
 - A central sqlite database
 - Support for accessing unlimited databases with Turso
 - RESTful sql-like API to simplify communicating with your databases
