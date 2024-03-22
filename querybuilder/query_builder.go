@@ -208,7 +208,7 @@ func buildInsert(cols map[string]any, table string) (string, []any, error) {
 
 func buildSelect(param string, table string) (string, error) {
 
-	cols, rels, err := parseSelect(param)
+	cols, rels, err := parseSelect(param, table)
 	if err != nil {
 		return "", err
 	}
@@ -216,7 +216,7 @@ func buildSelect(param string, table string) (string, error) {
 	query := "SELECT "
 
 	for _, col := range cols {
-		query += fmt.Sprintf(`"%s", `, col)
+		query += col + ", "
 	}
 
 	query = query[:len(query)-2] + " FROM " + table + " "
@@ -225,18 +225,17 @@ func buildSelect(param string, table string) (string, error) {
 		return query, nil
 	}
 
-	// TODO add joins once cache is done
-
-	// for tbl, rel := range rels {
-
-	// 	query += fmt.Sprintf("LEFT JOIN %s ON %s %s %s ", tbl, rel.forKey, rel.operator, rel.ref)
-
-	// }
+	for tbl, ref := range rels {
+		fmt.Println("table: ", tbl)
+		fmt.Println("references: ", ref)
+	}
 
 	return query, nil
 }
 
-func parseSelect(str string) ([]string, map[string]string, error) {
+func parseSelect(str string, table string) ([]string, map[string]string, error) {
+
+	fkMap := make(map[string]string)
 
 	if str == "" {
 		cols := make([]string, 1)
@@ -248,15 +247,13 @@ func parseSelect(str string) ([]string, map[string]string, error) {
 		return nil, nil, errors.New("the requested select query is not parsable because of unclosed quotation marks")
 	}
 
-	var relationMap map[string]string
 	var cols []string
 	inQuotes := false
-	currTable := ""
+	currTable := table
 	var prevTable string
 	currStr := ""
 
 	for _, v := range str {
-
 		if inQuotes && v != '"' {
 			currStr += string(v)
 			continue
@@ -266,18 +263,20 @@ func parseSelect(str string) ([]string, map[string]string, error) {
 		case '"':
 			inQuotes = !inQuotes
 		case '(':
-
 			prevTable = currTable
 			currTable = currStr
 			currStr = ""
+			fkMap[currTable] = prevTable
 		case ')':
 
 			cols = append(cols, dotSeparate(currTable, currStr))
 			currTable = prevTable
-
 		case ',':
-
-			cols = append(cols, dotSeparate(currTable, currStr))
+			if currTable == table {
+				cols = append(cols, "\""+currStr+"\"")
+			} else {
+				cols = append(cols, dotSeparate(currTable, currStr))
+			}
 			currStr = ""
 		default:
 			currStr += string(v)
@@ -288,7 +287,7 @@ func parseSelect(str string) ([]string, map[string]string, error) {
 		cols = append(cols, dotSeparate(currTable, currStr))
 	}
 
-	return cols, relationMap, nil
+	return cols, fkMap, nil
 }
 
 func buildOrder(param string) (string, error) {
@@ -413,11 +412,11 @@ func mapOperator(str string) string {
 
 func dotSeparate(x, y string) string {
 	if x == "" {
-		return y
+		return "\"" + y + "\""
 	}
 	if y == "" {
-		return x
+		return "\"" + x + "\""
 	}
 
-	return x + "." + y
+	return fmt.Sprintf(`"%s"."%s"`, x, y)
 }
