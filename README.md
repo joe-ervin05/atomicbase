@@ -1,10 +1,23 @@
-# Atomicbase
 
-Atomicbase is a scalable Libsql-based backend in a single file.
+## What is Atomicbase?
+
+> **Atomicbase is in very early stages of development.** It is not ready for use in projects yet.
+> The more help we can get from the community, the faster it can be launched! Help of any form is greatly appreciated.
+
+Atomicbase is small but incredibly powerful. It is a scalable Libsql-based backend in a single file. It starts with a primary embedded sqlite database. You can store all of your data there or you can use it to connect other databases over the network using Turso. This makes multi-tenant backends easier than ever before.
+
+You can also just use the primary database by itself and get similar scalability to Pocketbase. This gives you the ability to host all your data in one place but the flexibility to expand if you want or need to.
+
+Atomicbase is also very fast because it is written 100% in go and the primary database doesn't experience any network latency since it is embedded with your server.
+
+Atomicbase is fully open source and it's single executable includes:
+- A central sqlite database
+- Ability to connect to any libsql database over the network
+- RESTful sql-like API to simplify communicating with your databases
+- File storage that syncs with your database
+- Simple admin dashboard UI
 
 ## Development
-
-Atomicbase is still in the very early stages of development. It is not ready for use in projects yet.
 
 Here is a checklist for development of Atomicbase:
 - [ ] REST API
@@ -24,21 +37,6 @@ This makes a pattern like database per user significantly easier because you can
 Aside from that the vision is to create something similar to Supabase in that it provides an sql-like interface that is much simpler and faster to use than writing everything yourself.
 
 The plan for UI is to write everything using Templ and HTMX so that it is all 100% golang.
-
-## Why Atomicbase?
-
-Atomicbase is small but incredibly powerful. It starts with a primary embedded sqlite database. You can store all of your data there or you can use it to connect other databases over the network using Turso. This makes multi-tenant backends easier than ever before.
-
-You can also just use the primary database by itself and get similar scalability to Pocketbase. This gives you the ability to host all your data in one place but the flexibility to expand if you want or need to.
-
-Atomicbase is also very fast because it is written 100% in go and the primary database doesn't experience any network latency since it is embedded with your server.
-
-Atomicbase is fully open source and it's single executable includes:
-- A central sqlite database
-- Ability to connect to any libsql database over the network
-- RESTful sql-like API to simplify communicating with your databases
-- File storage that syncs with your database
-- Simple admin dashboard UI
 
 ## Notes
 
