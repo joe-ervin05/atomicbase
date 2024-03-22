@@ -37,6 +37,8 @@ This makes a pattern like database per user significantly easier because you can
 
 Aside from that the vision is to create something similar to Supabase in that it provides an sql-like interface that is much simpler, faster, and complete than writing everything yourself.
 
+The ui will implement all 4 sqlite types as well as a custom file type.
+
 The plan for UI is to write everything using Templ and HTMX so that it is all 100% golang.
 
 ## Notes
