@@ -54,4 +54,3 @@ The only thing that I ask is that if you profit off of it significantly please c
 All contributions are appreciated including:
 - [Contributing to the source code](https://github.com/joe-ervin05/atomicbase/blob/main/CONTRIBUTING.MD)
 - [Reporting issues and suggesting new features](https://github.com/joe-ervin05/atomicbase/issues)
-- Contributing to the buymeacoffee (coming soon)
