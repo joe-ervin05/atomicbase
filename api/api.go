@@ -2,45 +2,33 @@ package api
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/joe-ervin05/atomicbase/db"
-	"github.com/joe-ervin05/atomicbase/querybuilder"
 )
 
-type ApiServer struct {
-	listen string
+func Run(app *fiber.App) {
+	apiApp := app.Group("/api", db.DbMiddleware())
+
+	apiApp.Get("/:table", handleGetRows())
+
+	apiApp.Post("/:table", handlePostRows())
+
+	apiApp.Delete("/:table", handleDeleteRows())
+
+	apiApp.Patch("/:table", handlePatchRows())
+
+	apiApp.Post("/udf/:funcName", handlePostUdf())
 }
 
-func NewApiServer(listenAddr string) *ApiServer {
-	return &ApiServer{
-		listen: listenAddr,
-	}
-}
+func handleGetRows() fiber.Handler {
+	return func(c fiber.Ctx) error {
+		dao := c.Locals("dao").(db.Database)
 
-func (srvr *ApiServer) Run() {
-	app := fiber.New()
-
-	app.Get("/v1/:table", srvr.handleGetRows())
-
-	app.Post("/v1/:table", srvr.handlePostRows())
-
-	app.Delete("/v1/:table", srvr.handleDeleteRows())
-
-	app.Post("/v1/udf/:funcName", srvr.handlePostUdf())
-
-	log.Fatal(app.Listen(srvr.listen))
-}
-
-func (srvr *ApiServer) handleGetRows() fiber.Handler {
-	return db.WithDb(func(c fiber.Ctx, dao db.Database) error {
-		query, args, err := querybuilder.SelectRows(c.Queries(), c.Params("table"))
+		query, args, err := db.SelectRows(c)
 		if err != nil {
 			return err
 		}
-
-		fmt.Println(query, args)
 
 		j, err := dao.QueryJson(query, args...)
 		if err != nil {
@@ -49,16 +37,14 @@ func (srvr *ApiServer) handleGetRows() fiber.Handler {
 
 		c.Response().SetBody(j)
 		return nil
-	})
+	}
 }
 
-func (srvr *ApiServer) handlePostRows() fiber.Handler {
-	return db.WithDb(func(c fiber.Ctx, dao db.Database) error {
+func handlePostRows() fiber.Handler {
+	return func(c fiber.Ctx) error {
+		dao := c.Locals("dao").(db.Database)
 
-		bodyBytes := c.Request().Body()
-		upsert := c.Get("Prefer") == "resolution=merge-duplicates"
-
-		query, args, err := querybuilder.InsertRows(bodyBytes, c.Queries(), c.Params("table"), upsert)
+		query, args, err := db.InsertRows(c)
 		if err != nil {
 			return err
 		}
@@ -70,32 +56,56 @@ func (srvr *ApiServer) handlePostRows() fiber.Handler {
 
 		c.Response().SetBody(jsn)
 		return nil
-	})
+	}
 }
 
-func (srvr *ApiServer) handleDeleteRows() fiber.Handler {
-	return db.WithDb(func(c fiber.Ctx, db db.Database) error {
-		query, args, err := querybuilder.DeleteRows(c.Queries(), c.Params("table"))
-		fmt.Println(query)
+func handlePatchRows() fiber.Handler {
+	return func(c fiber.Ctx) error {
+		dao := c.Locals("dao").(db.Database)
+
+		query, args, err := db.UpdateRows(c)
 		if err != nil {
 			return err
 		}
+		fmt.Println(query, args)
 
-		jsn, err := db.QueryJson(query, args...)
+		jsn, err := dao.QueryJson(query, args...)
 		if err != nil {
 			return err
 		}
 
 		c.Response().SetBody(jsn)
 		return nil
-	})
+	}
 }
 
-func (srvr *ApiServer) handlePostUdf() fiber.Handler {
-	return db.WithDb(func(c fiber.Ctx, dao db.Database) error {
+func handleDeleteRows() fiber.Handler {
+	return func(c fiber.Ctx) error {
+		dao := c.Locals("dao").(db.Database)
+
+		query, args, err := db.DeleteRows(c.Queries(), c.Params("table"))
+		fmt.Println(query)
+		if err != nil {
+			return err
+		}
+
+		jsn, err := dao.QueryJson(query, args...)
+		if err != nil {
+			return err
+		}
+
+		c.Response().SetBody(jsn)
+		return nil
+	}
+}
+
+func handlePostUdf() fiber.Handler {
+	return func(c fiber.Ctx) error {
+		dao := c.Locals("dao").(db.Database)
+		_ = dao
 
 		// handle user defined function requestss
 
 		return nil
-	})
+	}
 }

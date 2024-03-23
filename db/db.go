@@ -11,11 +11,8 @@ import (
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
 )
 
-type dbHandler func(fiber.Ctx, Database) error
-
 type Database struct {
 	Client *sql.DB
-	Schema SchemaCache
 }
 
 type SchemaCache struct {
@@ -34,76 +31,76 @@ type Fk struct {
 type TblMap map[string]map[string]string
 type PkMap map[string]string
 
-func WithDb(h dbHandler) fiber.Handler {
+func DbMiddleware() fiber.Handler {
 	return func(c fiber.Ctx) error {
-
-		dbName := c.Get("DbName")
-		if dbName == "" {
-			dbName = os.Getenv("DB_NAME")
-		}
-
-		org := os.Getenv("TURSO_ORGANIZATION")
-
-		token := c.Get("Authorization")
-
-		dao, err := initDb(dbName, org, token)
-
+		dao, cache, err := initDb(c)
 		if err != nil {
 			return c.Status(500).SendString(err.Error())
 		}
 
-		defer dao.Client.Close()
+		c.Locals("dao", dao)
+		c.Locals("schema", cache)
+		err = c.Next()
 
-		return h(c, dao)
+		return err
 	}
 }
 
-func initDb(name, org, token string) (Database, error) {
+func initDb(c fiber.Ctx) (Database, SchemaCache, error) {
+	dbName := c.Get("DbName")
+	if dbName == "" {
+		dbName = os.Getenv("DB_NAME")
+	}
+
+	org := os.Getenv("TURSO_ORGANIZATION")
+
+	token := c.Get("Authorization")
+
 	var url string
 
-	if name == "" {
+	if dbName == "" {
 		url = "file:primary.db"
 	} else {
 		authToken := token[7:]
-		url = fmt.Sprintf("libsql://%s-%s.turso.io?authToken=%s", name, org, authToken)
+		url = fmt.Sprintf("libsql://%s-%s.turso.io?authToken=%s", dbName, org, authToken)
 	}
 
 	client, err := sql.Open("libsql", url)
 	if err != nil {
 		fmt.Println(err)
-		return Database{}, err
+		return Database{}, SchemaCache{}, err
 	}
 
 	err = client.Ping()
 
 	if err != nil {
-		return Database{}, err
+		return Database{}, SchemaCache{}, err
 	}
 
 	schema, err := loadSchema()
 	if err != nil {
 		pks, err := schemaPks(client)
 		if err != nil {
-			return Database{}, err
+			return Database{}, SchemaCache{}, err
 		}
 		fks, err := schemaFks(client)
 		if err != nil {
-			return Database{}, err
+			return Database{}, SchemaCache{}, err
 		}
 		cols, err := schemaCols(client)
 		if err != nil {
-			return Database{}, err
+			return Database{}, SchemaCache{}, err
 		}
 
 		schema = SchemaCache{cols, pks, fks}
 
 		err = saveSchema(schema)
 		if err != nil {
-			return Database{}, err
+			return Database{}, SchemaCache{}, err
 		}
 	}
 
-	return Database{client, schema}, nil
+	return Database{client}, schema, nil
 }
 
 // runs a query and returns a json bytes encoding of the result

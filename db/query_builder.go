@@ -1,10 +1,12 @@
-package querybuilder
+package db
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/gofiber/fiber/v3"
 )
 
 func DeleteRows(params map[string]string, table string) (string, []any, error) {
@@ -17,7 +19,7 @@ func DeleteRows(params map[string]string, table string) (string, []any, error) {
 	}
 
 	if where == "" {
-		return "", nil, errors.New("the requested query would delete all rows. If this is intended please add a parameter like 1 = 1 for safety reasons")
+		return "", nil, errors.New("all DELETES require a where clause")
 	}
 	query += where
 
@@ -41,20 +43,85 @@ func DeleteRows(params map[string]string, table string) (string, []any, error) {
 	return query, args, nil
 }
 
-func InsertRows(body []byte, params map[string]string, table string, upsert bool) (string, []any, error) {
+func UpdateRows(c fiber.Ctx) (string, []any, error) {
+	table := c.Params("table")
+	params := c.Queries()
+	body := c.Request().Body()
+
+	var cols map[string]any
+	err := json.Unmarshal(body, &cols)
+	if err != nil {
+		return "", nil, err
+	}
+
+	query, args, err := buildUpdate(cols, table)
+	if err != nil {
+		return "", nil, err
+	}
+
+	where, whereArgs, err := buildWhere(params)
+	if err != nil {
+		return "", nil, err
+	}
+	query += where
+	args = append(args, whereArgs...)
+
+	if params["select"] != "" {
+		sel, err := buildReturning(params["select"])
+		if err != nil {
+			return "", nil, err
+		}
+
+		query += sel
+
+		if params["order"] != "" {
+			order, err := buildOrder(params["order"])
+			if err != nil {
+				return "", nil, err
+			}
+
+			query += order
+		}
+	}
+
+	return query, args, nil
+}
+
+func buildUpdate(cols map[string]any, table string) (string, []any, error) {
+
+	query := "UPDATE " + table + " SET "
+	args := make([]any, len(cols))
+
+	colI := 0
+	for col, val := range cols {
+		query += col + " = ?, "
+		args[colI] = val
+		colI++
+	}
+
+	return query[:len(query)-2] + " ", args, nil
+}
+
+func InsertRows(c fiber.Ctx) (string, []any, error) {
+	table := c.Params("table")
+	params := c.Queries()
+	body := c.Request().Body()
+	upsert := c.Get("Prefer") == "resolution=merge-duplicates"
+
 	query := ""
 	var args []any
 
 	if upsert {
 		type columnSlice []map[string]any
 		var cols columnSlice
+		pk := c.Locals("schema").(SchemaCache).Pks[table]
 
 		err := json.Unmarshal(body, &cols)
 		if err != nil {
 			return "", nil, err
 		}
 
-		insert, insArgs, err := buildUpsert(cols, table)
+		insert, insArgs, err := buildUpsert(cols, table, pk)
 		if err != nil {
 			return "", nil, err
 		}
@@ -101,7 +168,9 @@ func InsertRows(body []byte, params map[string]string, table string, upsert bool
 	return query, args, nil
 }
 
-func buildUpsert(colSlice []map[string]any, table string) (string, []any, error) {
+func buildUpsert(colSlice []map[string]any, table string, pk string) (string, []any, error) {
+	fmt.Println(pk)
+
 	query := "INSERT INTO " + table + " ( "
 	args := make([]any, len(colSlice)*len(colSlice[0]))
 	valHolder := "( "
@@ -130,15 +199,21 @@ func buildUpsert(colSlice []map[string]any, table string) (string, []any, error)
 
 	}
 
+	query = query[:len(query)-2] + fmt.Sprintf(" ON CONFLICT(%s) DO UPDATE SET ", pk)
+
 	return query[:len(query)-2] + " ", args, nil
 
 }
 
-func SelectRows(params map[string]string, table string) (string, []any, error) {
+func SelectRows(c fiber.Ctx) (string, []any, error) {
+	params := c.Queries()
+	table := c.Params("table")
+	schema := c.Locals("schema").(SchemaCache)
+
 	query := ""
 	var args []any
 
-	sel, err := buildSelect(params["select"], table)
+	sel, err := buildSelect(params["select"], table, schema)
 	if err != nil {
 		return "", nil, err
 	}
@@ -206,7 +281,7 @@ func buildInsert(cols map[string]any, table string) (string, []any, error) {
 
 }
 
-func buildSelect(param string, table string) (string, error) {
+func buildSelect(param string, table string, schema SchemaCache) (string, error) {
 
 	cols, rels, err := parseSelect(param, table)
 	if err != nil {
@@ -226,8 +301,16 @@ func buildSelect(param string, table string) (string, error) {
 	}
 
 	for tbl, ref := range rels {
-		fmt.Println("table: ", tbl)
-		fmt.Println("references: ", ref)
+		var fk Fk
+
+		for _, val := range schema.Fks {
+			if val.Table == tbl && val.References == ref {
+				fk = val
+				break
+			}
+		}
+
+		fmt.Println(fk)
 	}
 
 	return query, nil
@@ -268,12 +351,11 @@ func parseSelect(str string, table string) ([]string, map[string]string, error) 
 			currStr = ""
 			fkMap[currTable] = prevTable
 		case ')':
-
 			cols = append(cols, dotSeparate(currTable, currStr))
 			currTable = prevTable
 		case ',':
 			if currTable == table {
-				cols = append(cols, "\""+currStr+"\"")
+				cols = append(cols, currStr)
 			} else {
 				cols = append(cols, dotSeparate(currTable, currStr))
 			}
@@ -412,11 +494,11 @@ func mapOperator(str string) string {
 
 func dotSeparate(x, y string) string {
 	if x == "" {
-		return "\"" + y + "\""
+		return y
 	}
 	if y == "" {
-		return "\"" + x + "\""
+		return x
 	}
 
-	return fmt.Sprintf(`"%s"."%s"`, x, y)
+	return x + "." + y
 }

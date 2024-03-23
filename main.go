@@ -1,6 +1,9 @@
 package main
 
 import (
+	"log"
+
+	"github.com/gofiber/fiber/v3"
 	"github.com/joe-ervin05/atomicbase/api"
 	"github.com/joho/godotenv"
 )
@@ -10,9 +13,10 @@ func init() {
 }
 
 func main() {
+	app := fiber.New()
 
-	srvr := api.NewApiServer(":3000")
+	api.Run(app)
 
-	srvr.Run()
+	log.Fatal(app.Listen(":3000"))
 
 }
