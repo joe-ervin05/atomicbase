@@ -99,7 +99,7 @@ func buildUpdate(cols map[string]any, table string) (string, []any, error) {
 		colI++
 	}
 
-	return query[:len(query)-2] + " ", args, nil
+	return query[:len(query)-2] + " ", nil, nil
 }
 
 func InsertRows(c fiber.Ctx) (string, []any, error) {
@@ -201,6 +201,12 @@ func buildUpsert(colSlice []map[string]any, table string, pk string) (string, []
 
 	query = query[:len(query)-2] + fmt.Sprintf(" ON CONFLICT(%s) DO UPDATE SET ", pk)
 
+	for col := range colSlice[0] {
+		if col != pk {
+			query += col + " = excluded." + col + ", "
+		}
+	}
+
 	return query[:len(query)-2] + " ", args, nil
 
 }
@@ -266,10 +272,10 @@ func buildInsert(cols map[string]any, table string) (string, []any, error) {
 	values := "( "
 
 	for col, val := range cols {
-		i++
 		args[i] = val
 		columns += col + ", "
 		values += "?, "
+		i++
 	}
 
 	columns = columns[:len(columns)-2] + " ) "

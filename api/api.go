@@ -45,6 +45,7 @@ func handlePostRows() fiber.Handler {
 		dao := c.Locals("dao").(db.Database)
 
 		query, args, err := db.InsertRows(c)
+		fmt.Println(query, args)
 		if err != nil {
 			return err
 		}
@@ -67,7 +68,6 @@ func handlePatchRows() fiber.Handler {
 		if err != nil {
 			return err
 		}
-		fmt.Println(query, args)
 
 		jsn, err := dao.QueryJson(query, args...)
 		if err != nil {
