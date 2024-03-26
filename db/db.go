@@ -4,15 +4,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 
-	"github.com/gofiber/fiber/v3"
 	_ "github.com/mattn/go-sqlite3"
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
 )
 
 type Database struct {
-	Client *sql.DB
+	client *sql.DB
+	Schema SchemaCache
 }
 
 type SchemaCache struct {
@@ -31,30 +32,15 @@ type Fk struct {
 type TblMap map[string]map[string]string
 type PkMap map[string]string
 
-func DbMiddleware() fiber.Handler {
-	return func(c fiber.Ctx) error {
-		dao, cache, err := initDb(c)
-		if err != nil {
-			return c.Status(500).SendString(err.Error())
-		}
-
-		c.Locals("dao", dao)
-		c.Locals("schema", cache)
-		err = c.Next()
-
-		return err
-	}
-}
-
-func initDb(c fiber.Ctx) (Database, SchemaCache, error) {
-	dbName := c.Get("DbName")
+func initDb(req *http.Request) (Database, error) {
+	dbName := req.Header.Get("DbName")
 	if dbName == "" {
 		dbName = os.Getenv("DB_NAME")
 	}
 
 	org := os.Getenv("TURSO_ORGANIZATION")
 
-	token := c.Get("Authorization")
+	token := req.Header.Get("Authorization")
 
 	var url string
 
@@ -68,47 +54,48 @@ func initDb(c fiber.Ctx) (Database, SchemaCache, error) {
 	client, err := sql.Open("libsql", url)
 	if err != nil {
 		fmt.Println(err)
-		return Database{}, SchemaCache{}, err
+		return Database{}, err
 	}
 
 	err = client.Ping()
 
 	if err != nil {
-		return Database{}, SchemaCache{}, err
+		return Database{}, err
 	}
 
 	schema, err := loadSchema()
 	if err != nil {
 		pks, err := schemaPks(client)
 		if err != nil {
-			return Database{}, SchemaCache{}, err
+			return Database{}, err
 		}
 		fks, err := schemaFks(client)
 		if err != nil {
-			return Database{}, SchemaCache{}, err
+			return Database{}, err
 		}
 		cols, err := schemaCols(client)
 		if err != nil {
-			return Database{}, SchemaCache{}, err
+			return Database{}, err
 		}
 
 		schema = SchemaCache{cols, pks, fks}
 
 		err = saveSchema(schema)
 		if err != nil {
-			return Database{}, SchemaCache{}, err
+			return Database{}, err
 		}
 	}
 
-	return Database{client}, schema, nil
+	return Database{client, schema}, nil
 }
 
 // runs a query and returns a json bytes encoding of the result
 func (dao Database) QueryMap(query string, args ...any) ([]interface{}, error) {
-	rows, err := dao.Client.Query(query, args...)
+	rows, err := dao.client.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 
 	columnTypes, err := rows.ColumnTypes()
 
@@ -180,93 +167,5 @@ func (dao Database) QueryJson(query string, args ...any) ([]byte, error) {
 	}
 
 	return json.Marshal(jsn)
-
-}
-
-func schemaFks(db *sql.DB) ([]Fk, error) {
-
-	var fks []Fk
-
-	rows, err := db.Query(`
-		SELECT m.name as "table", p."table" as "references", p."from", p."to"
-		FROM sqlite_master m
-		JOIN pragma_foreign_key_list(m.name) p ON m.name != p."table"
-		WHERE m.type = 'table'
-		ORDER BY m.name;
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var from, to, references, table sql.NullString
-
-		rows.Scan(&table, &references, &from, &to)
-
-		fks = append(fks, Fk{table.String, references.String, from.String, to.String})
-
-	}
-
-	return fks, err
-}
-
-func schemaCols(db *sql.DB) (TblMap, error) {
-
-	tblMap := make(TblMap)
-
-	rows, err := db.Query(`
-		SELECT m.name, l.name as col, l.type as colType
-		FROM sqlite_master m
-		JOIN pragma_table_info(m.name) l
-		WHERE m.type = 'table'
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var col sql.NullString
-		var colType sql.NullString
-		var name sql.NullString
-
-		rows.Scan(&name, &col, &colType)
-
-		if tblMap[name.String] == nil {
-			tblMap[name.String] = make(map[string]string)
-		}
-		tblMap[name.String][col.String] = colType.String
-	}
-
-	return tblMap, rows.Err()
-
-}
-
-func schemaPks(db *sql.DB) (map[string]string, error) {
-
-	pkMap := make(map[string]string)
-
-	rows, err := db.Query(`
-		SELECT m.name, l.name as pk
-		FROM sqlite_master m
-		JOIN pragma_table_info(m.name) l ON l.pk = 1
-		WHERE m.type = 'table'
-		ORDER BY m.name;
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var pk sql.NullString
-		var name sql.NullString
-
-		rows.Scan(&name, &pk)
-		pkMap[name.String] = pk.String
-	}
-
-	return pkMap, rows.Err()
 
 }

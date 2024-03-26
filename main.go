@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"net/http"
 
-	"github.com/gofiber/fiber/v3"
 	"github.com/joe-ervin05/atomicbase/api"
+	"github.com/joe-ervin05/atomicbase/db"
 	"github.com/joho/godotenv"
 )
 
@@ -13,10 +15,16 @@ func init() {
 }
 
 func main() {
-	app := fiber.New()
+	app := http.NewServeMux()
 
 	api.Run(app)
 
-	log.Fatal(app.Listen(":3000"))
+	server := http.Server{
+		Addr:    ":8080",
+		Handler: db.Middleware(app),
+	}
+
+	fmt.Println("Listening on port 8080")
+	log.Fatal(server.ListenAndServe())
 
 }

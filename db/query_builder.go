@@ -4,87 +4,132 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"strings"
-
-	"github.com/gofiber/fiber/v3"
 )
 
-func DeleteRows(params map[string]string, table string) (string, []any, error) {
+func (dao Database) SelectRows(req *http.Request) ([]byte, error) {
+	params := req.URL.Query()
+	table := req.PathValue("table")
+
+	query := ""
+	var args []any
+	sel := ""
+
+	if params["select"] != nil {
+		sel = params["select"][0]
+	}
+
+	sel, err := buildSelect(sel, table, dao.Schema)
+	if err != nil {
+		return nil, err
+	}
+
+	query += sel
+
+	where, wArgs, err := buildWhere(params)
+	if err != nil {
+		return nil, err
+	}
+
+	query += where
+	args = append(args, wArgs...)
+
+	if params["order"] != nil {
+		orderBy, err := buildOrder(params["order"][0])
+		if err != nil {
+			return nil, err
+		}
+
+		query += orderBy
+	}
+
+	fmt.Println(query, args)
+
+	return dao.QueryJson(query, args...)
+}
+
+func (dao Database) DeleteRows(req *http.Request) ([]byte, error) {
+
+	table := req.PathValue("table")
+	params := req.URL.Query()
 
 	query := "DELETE FROM " + table + " "
 
 	where, args, err := buildWhere(params)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	if where == "" {
-		return "", nil, errors.New("all DELETES require a where clause")
+		return nil, errors.New("all DELETES require a where clause")
 	}
 	query += where
 
-	if params["select"] != "" {
-		sel, err := buildReturning(params["select"])
+	if params["select"] != nil {
+		sel, err := buildReturning(params["select"][0])
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 
 		query += sel
 
-		if params["order"] != "" {
-			order, err := buildOrder(params["order"])
+		if params["order"] != nil {
+			order, err := buildOrder(params["order"][0])
 			if err != nil {
-				return "", nil, err
+				return nil, err
 			}
 			query += order
 		}
 	}
 
-	return query, args, nil
+	return dao.QueryJson(query, args...)
 }
 
-func UpdateRows(c fiber.Ctx) (string, []any, error) {
-	table := c.Params("table")
-	params := c.Queries()
-	body := c.Request().Body()
+func (dao Database) UpdateRows(req *http.Request) ([]byte, error) {
+	table := req.PathValue("table")
+	params := req.URL.Query()
+	dec := json.NewDecoder(req.Body)
+	dec.DisallowUnknownFields()
 
 	var cols map[string]any
-	err := json.Unmarshal(body, &cols)
+	err := dec.Decode(&cols)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	query, args, err := buildUpdate(cols, table)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	where, whereArgs, err := buildWhere(params)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	query += where
 	args = append(args, whereArgs...)
 
-	if params["select"] != "" {
-		sel, err := buildReturning(params["select"])
+	if params["select"] != nil {
+		sel, err := buildReturning(params["select"][0])
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 
 		query += sel
 
-		if params["order"] != "" {
-			order, err := buildOrder(params["order"])
+		if params["order"] != nil {
+			order, err := buildOrder(params["order"][0])
 			if err != nil {
-				return "", nil, err
+				return nil, err
 			}
 
 			query += order
 		}
 	}
 
-	return query, args, nil
+	return dao.QueryJson(query, args...)
 }
 
 func buildUpdate(cols map[string]any, table string) (string, []any, error) {
@@ -102,74 +147,73 @@ func buildUpdate(cols map[string]any, table string) (string, []any, error) {
 	return query[:len(query)-2] + " ", nil, nil
 }
 
-func InsertRows(c fiber.Ctx) (string, []any, error) {
-	table := c.Params("table")
-	params := c.Queries()
-	body := c.Request().Body()
-	upsert := c.Get("Prefer") == "resolution=merge-duplicates"
+func (dao Database) InsertRows(req *http.Request) ([]byte, error) {
+	table := req.PathValue("table")
+	params := req.URL.Query()
+	dec := json.NewDecoder(req.Body)
+	dec.DisallowUnknownFields()
+
+	upsert := req.Header.Get("Prefer") == "resolution=merge-duplicates"
 
 	query := ""
 	var args []any
 
 	if upsert {
-		type columnSlice []map[string]any
-		var cols columnSlice
-		pk := c.Locals("schema").(SchemaCache).Pks[table]
+		var cols []map[string]any
+		pk := dao.Schema.Pks[table]
 
-		err := json.Unmarshal(body, &cols)
+		err := dec.Decode(&cols)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 
 		insert, insArgs, err := buildUpsert(cols, table, pk)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 
 		query += insert
 		args = append(args, insArgs...)
 
 	} else {
-		type columns map[string]any
-		var cols columns
+		var cols map[string]any
 
-		err := json.Unmarshal(body, &cols)
+		err := dec.Decode(&cols)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 
 		insert, insArgs, err := buildInsert(cols, table)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 
 		query += insert
 		args = append(args, insArgs...)
 	}
 
-	if params["select"] != "" {
-		sel, err := buildReturning(params["select"])
+	if params["select"] != nil {
+		sel, err := buildReturning(params["select"][0])
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 
 		query += sel
 
-		if params["order"] != "" {
-			order, err := buildOrder(params["order"])
+		if params["order"] != nil {
+			order, err := buildOrder(params["order"][0])
 			if err != nil {
-				return "", nil, err
+				return nil, err
 			}
 
 			query += order
 		}
 	}
 
-	return query, args, nil
+	return dao.QueryJson(query, args...)
 }
 
 func buildUpsert(colSlice []map[string]any, table string, pk string) (string, []any, error) {
-	fmt.Println(pk)
 
 	query := "INSERT INTO " + table + " ( "
 	args := make([]any, len(colSlice)*len(colSlice[0]))
@@ -209,57 +253,6 @@ func buildUpsert(colSlice []map[string]any, table string, pk string) (string, []
 
 	return query[:len(query)-2] + " ", args, nil
 
-}
-
-func SelectRows(c fiber.Ctx) (string, []any, error) {
-	params := c.Queries()
-	table := c.Params("table")
-	schema := c.Locals("schema").(SchemaCache)
-
-	query := ""
-	var args []any
-
-	sel, err := buildSelect(params["select"], table, schema)
-	if err != nil {
-		return "", nil, err
-	}
-
-	query += sel
-
-	where, wArgs, err := buildWhere(params)
-	if err != nil {
-		return "", nil, err
-	}
-
-	query += where
-	args = append(args, wArgs...)
-
-	orderBy, err := buildOrder(params["order"])
-	if err != nil {
-		return "", nil, err
-	}
-
-	query += orderBy
-
-	return query, args, nil
-}
-
-func buildReturning(param string) (string, error) {
-
-	query := "RETURNING "
-
-	keys := splitNotQuotes(param, ',')
-
-	for i, key := range keys {
-
-		if i == len(keys)-1 {
-			query += key + " "
-		} else {
-			query += key + ", "
-		}
-	}
-
-	return query, nil
 }
 
 func buildInsert(cols map[string]any, table string) (string, []any, error) {
@@ -316,7 +309,7 @@ func buildSelect(param string, table string, schema SchemaCache) (string, error)
 			}
 		}
 
-		fmt.Println(fk)
+		query += fmt.Sprintf("LEFT JOIN %s on %s.%s = %s.%s ", fk.Table, fk.References, fk.To, fk.Table, fk.From)
 	}
 
 	return query, nil
@@ -372,7 +365,11 @@ func parseSelect(str string, table string) ([]string, map[string]string, error) 
 	}
 
 	if currStr != "" {
-		cols = append(cols, dotSeparate(currTable, currStr))
+		if currTable == table {
+			cols = append(cols, currStr)
+		} else {
+			cols = append(cols, dotSeparate(currTable, currStr))
+		}
 	}
 
 	return cols, fkMap, nil
@@ -424,7 +421,25 @@ func buildOrder(param string) (string, error) {
 	return query, nil
 }
 
-func buildWhere(params map[string]string) (string, []any, error) {
+func buildReturning(param string) (string, error) {
+
+	query := "RETURNING "
+
+	keys := splitNotQuotes(param, ',')
+
+	for i, key := range keys {
+
+		if i == len(keys)-1 {
+			query += key + " "
+		} else {
+			query += key + ", "
+		}
+	}
+
+	return query, nil
+}
+
+func buildWhere(params url.Values) (string, []any, error) {
 
 	var args []any
 	query := "Where "
@@ -439,7 +454,7 @@ func buildWhere(params map[string]string) (string, []any, error) {
 
 		query += name + " "
 
-		keys := splitNotQuotes(val, '.')
+		keys := splitNotQuotes(val[0], '.')
 
 		for _, v := range keys {
 			if mapOperator(v) != "" {

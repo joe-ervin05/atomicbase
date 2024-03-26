@@ -1,111 +1,88 @@
 package api
 
 import (
-	"fmt"
+	"io"
+	"net/http"
 
-	"github.com/gofiber/fiber/v3"
 	"github.com/joe-ervin05/atomicbase/db"
 )
 
-func Run(app *fiber.App) {
-	apiApp := app.Group("/api", db.DbMiddleware())
+func Run(app *http.ServeMux) {
 
-	apiApp.Get("/:table", handleGetRows())
+	app.HandleFunc("GET /api/{table}", handleGetRows())
+	app.HandleFunc("POST /api/{table}", handlePostRows())
+	app.HandleFunc("PATCH /api/{table}", handlePatchRows())
+	app.HandleFunc("DELETE /api/{table}", handleDeleteRows())
 
-	apiApp.Post("/:table", handlePostRows())
-
-	apiApp.Delete("/:table", handleDeleteRows())
-
-	apiApp.Patch("/:table", handlePatchRows())
-
-	apiApp.Post("/udf/:funcName", handlePostUdf())
+	app.HandleFunc("/api/udf/{funcName}", handlePostUdf())
 }
 
-func handleGetRows() fiber.Handler {
-	return func(c fiber.Ctx) error {
-		dao := c.Locals("dao").(db.Database)
-
-		query, args, err := db.SelectRows(c)
+func handleGetRows() http.HandlerFunc {
+	return func(wr http.ResponseWriter, req *http.Request) {
+		dao := req.Context().Value(db.Key).(db.Database)
+		res, err := dao.SelectRows(req)
+		// drain body
+		io.Copy(io.Discard, req.Body)
+		defer req.Body.Close()
 		if err != nil {
-			return err
+			handleErr(wr, err)
+			return
 		}
 
-		j, err := dao.QueryJson(query, args...)
-		if err != nil {
-			return err
-		}
-
-		c.Response().SetBody(j)
-		return nil
+		wr.Write(res)
 	}
 }
 
-func handlePostRows() fiber.Handler {
-	return func(c fiber.Ctx) error {
-		dao := c.Locals("dao").(db.Database)
-
-		query, args, err := db.InsertRows(c)
-		fmt.Println(query, args)
+func handlePostRows() http.HandlerFunc {
+	return func(wr http.ResponseWriter, req *http.Request) {
+		dao := req.Context().Value(db.Key).(db.Database)
+		res, err := dao.InsertRows(req)
+		defer req.Body.Close()
 		if err != nil {
-			return err
+			handleErr(wr, err)
+			return
 		}
 
-		jsn, err := dao.QueryJson(query, args...)
-		if err != nil {
-			return err
-		}
-
-		c.Response().SetBody(jsn)
-		return nil
+		wr.Write(res)
 	}
 }
 
-func handlePatchRows() fiber.Handler {
-	return func(c fiber.Ctx) error {
-		dao := c.Locals("dao").(db.Database)
-
-		query, args, err := db.UpdateRows(c)
+func handlePatchRows() http.HandlerFunc {
+	return func(wr http.ResponseWriter, req *http.Request) {
+		dao := req.Context().Value(db.Key).(db.Database)
+		res, err := dao.UpdateRows(req)
+		defer req.Body.Close()
 		if err != nil {
-			return err
+			handleErr(wr, err)
+			return
 		}
 
-		jsn, err := dao.QueryJson(query, args...)
-		if err != nil {
-			return err
-		}
-
-		c.Response().SetBody(jsn)
-		return nil
+		wr.Write(res)
 	}
 }
 
-func handleDeleteRows() fiber.Handler {
-	return func(c fiber.Ctx) error {
-		dao := c.Locals("dao").(db.Database)
-
-		query, args, err := db.DeleteRows(c.Queries(), c.Params("table"))
-		fmt.Println(query)
+func handleDeleteRows() http.HandlerFunc {
+	return func(wr http.ResponseWriter, req *http.Request) {
+		dao := req.Context().Value(db.Key).(db.Database)
+		res, err := dao.DeleteRows(req)
+		io.Copy(io.Discard, req.Body)
+		defer req.Body.Close()
 		if err != nil {
-			return err
+			handleErr(wr, err)
+			return
 		}
 
-		jsn, err := dao.QueryJson(query, args...)
-		if err != nil {
-			return err
-		}
-
-		c.Response().SetBody(jsn)
-		return nil
+		wr.Write(res)
 	}
 }
 
-func handlePostUdf() fiber.Handler {
-	return func(c fiber.Ctx) error {
-		dao := c.Locals("dao").(db.Database)
-		_ = dao
+func handlePostUdf() http.HandlerFunc {
+	return func(wr http.ResponseWriter, req *http.Request) {
 
-		// handle user defined function requestss
-
-		return nil
 	}
+}
+
+func handleErr(wr http.ResponseWriter, err error) {
+	wr.WriteHeader(http.StatusInternalServerError)
+	wr.Write([]byte(err.Error()))
 }
