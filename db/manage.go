@@ -140,3 +140,42 @@ func (dao Database) CreateDb(req *http.Request) error {
 
 	return nil
 }
+
+// for use with the primary database
+func (dao Database) DeleteDb(req *http.Request) error {
+	name := req.PathValue("name")
+
+	_, err := dao.client.Exec("DELETE FROM databases WHERE name = ?", name)
+	if err != nil {
+		return err
+	}
+
+	org := os.Getenv("TURSO_ORGANIZATION")
+	if org == "" {
+		return errors.New("TURSO_ORGANIZATION is not set but is required for managing turso databases")
+	}
+	token := os.Getenv("TURSO_API_KEY")
+	if token == "" {
+		return errors.New("TURSO_API_KEY is not set but is required for managing turso databases")
+	}
+
+	client := &http.Client{}
+	request, err := http.NewRequest("DELETE", fmt.Sprintf("https://api.turso.tech/v1/organizations/%s/databases/%s", org, name), nil)
+	if err != nil {
+		return err
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+token)
+
+	res, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	if res.StatusCode != 200 {
+		return errors.New(res.Status)
+	}
+
+	return nil
+
+}

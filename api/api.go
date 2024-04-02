@@ -19,7 +19,8 @@ func Run(app *http.ServeMux) {
 	app.HandleFunc("DELETE /api/schema/table/{name}", handleDropTable())
 	app.HandleFunc("POST /api/schema/edit", handleEditSchema())
 
-	app.HandleFunc("POST /api/db/{name}", handlePostDb())
+	app.HandleFunc("POST /api/db/{name}", handleCreateDb())
+	app.HandleFunc("DELETE /api/db/{name}", handleDeleteDb())
 
 	app.HandleFunc("/api/udf/{funcName}", handlePostUdf())
 }
@@ -48,10 +49,18 @@ func handleDeleteRows() http.HandlerFunc {
 	})
 }
 
-func handlePostDb() http.HandlerFunc {
+func handleCreateDb() http.HandlerFunc {
 	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
 
 		err := dao.CreateDb(req)
+		return nil, err
+	})
+}
+
+func handleDeleteDb() http.HandlerFunc {
+	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+
+		err := dao.DeleteDb(req)
 		return nil, err
 	})
 }

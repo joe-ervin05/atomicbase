@@ -5,47 +5,15 @@
 > **Atomicbase is in very early stages of development.** It is not ready for use in projects yet.
 > The more help we can get from the community, the faster it can be launched! Help of any form is greatly appreciated.
 
-Atomicbase is small but incredibly powerful. It is a scalable libsql & go backend in a single file.
+Atomicbase is a rest api that makes managing and querying turso databases significantly easier. It is especially useful for when your databases do not all share one schema.
 
-With Atomicbase and Turso, you can scale any application globally with ease.
+Atomicbase provides a thin abstraction over your queries and maintains a separate schema cache for each database so that queries can be made efficiently and safely.
 
-> Atomicbase is not affiliated with Turso, I just think its awesome modern tech to build a project around!
+Through the combination of parameterizing values and checking table and column names against the schema cache, no unchecked sql should ever be executed when querying a database.
 
-Atomicbase is fully open source and it's single executable will include:
-- A central sqlite database
-- Support for accessing unlimited databases with Turso
-- RESTful sql-like API to simplify communicating with your databases
-- File storage that syncs with your database
-- Simple admin dashboard UI
+This does not always make sql injection impossible though because sqlite allows for table and column names to be anything including malicious sql queries as long as it is quoted. This means any changes to a database's schema based on user input must be sanitized before they are executed.
 
-## Development
-
-Here is a checklist for development of Atomicbase:
-- [ ] REST API
-- [ ] CLI for server and DB management
-- [ ] File Storage
-- [ ] User management
-- [ ] Admin dashboard
-- [ ] Client SDK
-- [ ] Realtime
-
-### Plan
-
-The plan is for each project to have one central database which is the default database for api requests to come through. Then if you want to access another database you can send the database name in the request. This makes it very easy to manage as many databases as you need all through one interface.
-
-This makes a pattern like database per user significantly easier because you can just hold the name of the user's database in a JWT and then when they sign in use the api to retrieve data from their database.
-
-Aside from that the vision is to create something similar to Supabase in that it provides an sql-like interface that is much simpler, faster, and complete than writing everything yourself.
-
-The ui will implement all 4 sqlite types as well as a custom file type.
-
-The plan for UI is to write everything using Templ and HTMX so that it is all 100% golang.
-
-## Notes
-
-Atomicbase is heavily inspired by Pocketbase and Supabase but with the twist of Libsql to be incredibly flexible.
-
-The other big difference between Atomicbase and Pocketbase is that Atomicbase attempts to be more sql-like in its API so that it feels more familiar and easy to control. This is very similar to Supabase but without quite as many features because Sqlite has less features on purpose.
+atomicbase also has a [javascript SDK](https://github.com/joe-ervin05/atomicbase-js).
 
 ## Contributing
 

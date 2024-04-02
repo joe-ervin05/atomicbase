@@ -17,11 +17,52 @@ type Column struct {
 	OnUpdate   string `json:"onUpdate"`
 }
 
-func (dao Database) AlterTable(req *http.Request) error {
+func (dao Database) RenameTable(req *http.Request) error {
 	name := req.PathValue("name")
-	_ = name
+
+	if dao.Schema.Tables[name] == nil {
+		return InvalidTblErr(name)
+	}
 
 	return nil
+}
+
+func (dao Database) RenameColumns(req *http.Request) error {
+	name := req.PathValue("name")
+
+	if dao.Schema.Tables[name] == nil {
+		return InvalidTblErr(name)
+	}
+
+	return nil
+}
+
+func (dao Database) AddColumns(req *http.Request) error {
+	name := req.PathValue("name")
+
+	if dao.Schema.Tables[name] == nil {
+		return InvalidTblErr(name)
+	}
+
+	return nil
+}
+
+func (dao Database) DropColumn(req *http.Request) error {
+	name := req.PathValue("name")
+
+	if dao.Schema.Tables[name] == nil {
+		return InvalidTblErr(name)
+	}
+
+	column := req.PathValue("column")
+
+	if dao.Schema.Tables[name][column] == "" {
+		return invalidColErr(column, name)
+	}
+
+	_, err := dao.client.Exec("ALTER TABLE %s DROP COLUMN %s", name, column)
+
+	return err
 }
 
 func (dao Database) CreateTable(req *http.Request) error {
@@ -89,6 +130,10 @@ func (dao Database) CreateTable(req *http.Request) error {
 func (dao Database) DropTable(req *http.Request) error {
 	name := req.PathValue("name")
 
+	if dao.Schema.Tables[name] == nil {
+		return InvalidTblErr(name)
+	}
+
 	_, err := dao.client.Exec("DROP TABLE " + name)
 	if err != nil {
 		return err
@@ -100,6 +145,10 @@ func (dao Database) DropTable(req *http.Request) error {
 func (dao Database) SelectRows(req *http.Request) ([]interface{}, error) {
 	params := req.URL.Query()
 	table := req.PathValue("table")
+
+	if dao.Schema.Tables[table] == nil {
+		return nil, InvalidTblErr(table)
+	}
 
 	query := ""
 	var args []any
@@ -143,6 +192,10 @@ func (dao Database) DeleteRows(req *http.Request) ([]interface{}, error) {
 	table := req.PathValue("table")
 	params := req.URL.Query()
 
+	if dao.Schema.Tables[table] == nil {
+		return nil, InvalidTblErr(table)
+	}
+
 	query := "DELETE FROM " + table + " "
 
 	where, args, err := buildWhere(params)
@@ -173,6 +226,11 @@ func (dao Database) DeleteRows(req *http.Request) ([]interface{}, error) {
 
 func (dao Database) InsertRows(req *http.Request) ([]interface{}, error) {
 	table := req.PathValue("table")
+
+	if dao.Schema.Tables[table] == nil {
+		return nil, InvalidTblErr(table)
+	}
+
 	params := req.URL.Query()
 	dec := json.NewDecoder(req.Body)
 	dec.DisallowUnknownFields()
@@ -234,6 +292,11 @@ func (dao Database) InsertRows(req *http.Request) ([]interface{}, error) {
 
 func (dao Database) UpdateRows(req *http.Request) ([]interface{}, error) {
 	table := req.PathValue("table")
+
+	if dao.Schema.Tables[table] == nil {
+		return nil, InvalidTblErr(table)
+	}
+
 	params := req.URL.Query()
 	dec := json.NewDecoder(req.Body)
 	dec.DisallowUnknownFields()
