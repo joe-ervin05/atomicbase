@@ -2,9 +2,8 @@ package db
 
 import (
 	"database/sql"
-	"encoding/json"
-	"fmt"
-	"net/http"
+	"errors"
+	"log"
 	"os"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -14,6 +13,8 @@ import (
 type Database struct {
 	client *sql.DB
 	Schema SchemaCache
+	// id 0 means primary db
+	id int32
 }
 
 type SchemaCache struct {
@@ -32,61 +33,55 @@ type Fk struct {
 type TblMap map[string]map[string]string
 type PkMap map[string]string
 
-func initDb(req *http.Request) (Database, error) {
-	dbName := req.Header.Get("DbName")
-	if dbName == "" {
-		dbName = os.Getenv("DB_NAME")
-	}
+func init() {
 
-	org := os.Getenv("TURSO_ORGANIZATION")
-
-	token := req.Header.Get("Authorization")
-
-	var url string
-
-	if dbName == "" {
-		url = "file:primary.db"
-	} else {
-		authToken := token[7:]
-		url = fmt.Sprintf("libsql://%s-%s.turso.io?authToken=%s", dbName, org, authToken)
-	}
-
-	client, err := sql.Open("libsql", url)
+	err := os.MkdirAll("atomicdata", os.ModePerm)
 	if err != nil {
-		fmt.Println(err)
-		return Database{}, err
+		log.Fatal(err)
 	}
+
+	client, err := sql.Open("libsql", "file:atomicdata/primary.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
 
 	err = client.Ping()
 
 	if err != nil {
-		return Database{}, err
+		log.Fatal(err)
 	}
 
-	schema, err := loadSchema()
+	client.Exec(`
+	CREATE TABLE IF NOT EXISTS databases 
+	(
+		id INTEGER PRIMARY KEY, 
+		name TEXT, 
+		token TEXT NOT NULL UNIQUE,
+		schema BLOB
+	);`)
+}
+
+func (dao Database) QueryDbInfo(dbName string) (int32, string, SchemaCache, error) {
+
+	row := dao.client.QueryRow("SELECT id, token, schema from databases WHERE name = ?", dbName)
+
+	var id sql.NullInt32
+	var token sql.NullString
+	var sData []byte
+
+	err := row.Scan(&id, &token, &sData)
 	if err != nil {
-		pks, err := schemaPks(client)
-		if err != nil {
-			return Database{}, err
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, "", SchemaCache{}, errors.New("database not found")
 		}
-		fks, err := schemaFks(client)
-		if err != nil {
-			return Database{}, err
-		}
-		cols, err := schemaCols(client)
-		if err != nil {
-			return Database{}, err
-		}
-
-		schema = SchemaCache{cols, pks, fks}
-
-		err = saveSchema(schema)
-		if err != nil {
-			return Database{}, err
-		}
+		return 0, "", SchemaCache{}, err
 	}
 
-	return Database{client, schema}, nil
+	schema, err := loadSchema(sData)
+
+	return id.Int32, token.String, schema, err
+
 }
 
 // runs a query and returns a json bytes encoding of the result
@@ -158,14 +153,4 @@ func (dao Database) QueryMap(query string, args ...any) ([]interface{}, error) {
 	}
 
 	return finalRows, nil
-}
-
-func (dao Database) QueryJson(query string, args ...any) ([]byte, error) {
-	jsn, err := dao.QueryMap(query, args...)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.Marshal(jsn)
-
 }

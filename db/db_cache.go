@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/gob"
+	"fmt"
 	"os"
 	"sync"
 )
@@ -105,11 +106,6 @@ func saveSchema(schema SchemaCache) error {
 
 	var buf bytes.Buffer
 
-	err := os.MkdirAll("atomicdata", os.ModePerm)
-	if err != nil {
-		return err
-	}
-
 	file, err := os.Create("atomicdata/schema.gob")
 	if err != nil {
 		return err
@@ -124,22 +120,18 @@ func saveSchema(schema SchemaCache) error {
 	}
 
 	_, err = file.Write(buf.Bytes())
+	fmt.Println("completed schema save")
 
 	return err
 }
 
-func loadSchema() (SchemaCache, error) {
-
-	fData, err := os.ReadFile("atomicdata/schema.gob")
-	if err != nil {
-		return SchemaCache{}, err
-	}
-	buf := bytes.NewBuffer(fData)
+func loadSchema(data []byte) (SchemaCache, error) {
+	buf := bytes.NewBuffer(data)
 	dec := gob.NewDecoder(buf)
 
 	var schema SchemaCache
 
-	err = dec.Decode(&schema)
+	err := dec.Decode(&schema)
 
 	return schema, err
 
