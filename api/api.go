@@ -15,7 +15,10 @@ func Run(app *http.ServeMux) {
 
 	app.HandleFunc("POST /api/schema/invalidate", handleInvalidateSchema())
 	app.HandleFunc("POST /api/schema/table/{name}", handleCreateTable())
-	app.HandleFunc("PATCH /api/schema/table/{name}", handleAlterTable())
+	app.HandleFunc("PATCH /api/schema/table/{name}/rename/{newName}", handleRenameTable())
+	app.HandleFunc("POST /api/schema/table/{name}/columns", handleAddColumns())
+	app.HandleFunc("PATCH /api/schema/table/{name}/columns", handleRenameColumns())
+	app.HandleFunc("DELETE /api/schema/table/{name}/columns", handleDropColumns())
 	app.HandleFunc("DELETE /api/schema/table/{name}", handleDropTable())
 	app.HandleFunc("POST /api/schema/edit", handleEditSchema())
 
@@ -86,16 +89,37 @@ func handleCreateTable() http.HandlerFunc {
 	})
 }
 
-func handleAlterTable() http.HandlerFunc {
+func handleDropTable() http.HandlerFunc {
 	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
-		err := dao.AlterTable(req)
+		err := dao.DropTable(req)
 		return nil, err
 	})
 }
 
-func handleDropTable() http.HandlerFunc {
+func handleRenameTable() http.HandlerFunc {
 	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
-		err := dao.DropTable(req)
+		err := dao.RenameTable(req)
+		return nil, err
+	})
+}
+
+func handleRenameColumns() http.HandlerFunc {
+	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+		err := dao.RenameColumns(req)
+		return nil, err
+	})
+}
+
+func handleAddColumns() http.HandlerFunc {
+	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+		err := dao.AddColumns(req)
+		return nil, err
+	})
+}
+
+func handleDropColumns() http.HandlerFunc {
+	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+		err := dao.DropColumns(req)
 		return nil, err
 	})
 }

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 )
 
 type Column struct {
@@ -47,7 +46,7 @@ func (dao Database) AddColumns(req *http.Request) error {
 	return nil
 }
 
-func (dao Database) DropColumn(req *http.Request) error {
+func (dao Database) DropColumns(req *http.Request) error {
 	name := req.PathValue("name")
 
 	if dao.Schema.Tables[name] == nil {
@@ -165,7 +164,7 @@ func (dao Database) SelectRows(req *http.Request) ([]interface{}, error) {
 
 	query += sel
 
-	where, wArgs, err := buildWhere(params)
+	where, wArgs, err := buildWhere(table, dao.Schema.Tables[table], params)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +197,7 @@ func (dao Database) DeleteRows(req *http.Request) ([]interface{}, error) {
 
 	query := "DELETE FROM " + table + " "
 
-	where, args, err := buildWhere(params)
+	where, args, err := buildWhere(table, dao.Schema.Tables[table], params)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +311,7 @@ func (dao Database) UpdateRows(req *http.Request) ([]interface{}, error) {
 		return nil, err
 	}
 
-	where, whereArgs, err := buildWhere(params)
+	where, whereArgs, err := buildWhere(table, dao.Schema.Tables[table], params)
 	if err != nil {
 		return nil, err
 	}
@@ -476,27 +475,33 @@ func parseSelect(str string, table string) ([]string, map[string]string, error) 
 		return cols, nil, nil
 	}
 
-	if strings.Count(str, "\"")%2 != 0 {
-		return nil, nil, errors.New("the requested select query is not parsable because of unclosed quotation marks")
-	}
-
 	var cols []string
-	inQuotes := false
+	quoted := false
 	currTable := table
 	var prevTable string
 	currStr := ""
+	escaped := false
 	alias := ""
 	_ = alias
 
 	for _, v := range str {
-		if inQuotes && v != '"' {
+		if escaped {
+			currStr += string(v)
+			escaped = false
+			continue
+		}
+		if v == '\\' {
+			escaped = true
+			continue
+		}
+		if quoted && v != '"' {
 			currStr += string(v)
 			continue
 		}
 
 		switch v {
 		case '"':
-			inQuotes = !inQuotes
+			quoted = !quoted
 		case '(':
 			prevTable = currTable
 			currTable = currStr
@@ -555,10 +560,10 @@ func buildOrder(param string) (string, error) {
 
 	query := "ORDER BY "
 
-	orderBy := splitNotQuotes(param, ',', false)
+	orderBy := splitAtomic(param, ',')
 
 	for i, col := range orderBy {
-		keys := splitNotQuotes(col, '.', false)
+		keys := splitAtomic(col, '.')
 
 		if len(keys) > 1 {
 
@@ -598,7 +603,7 @@ func buildReturning(param string) (string, error) {
 
 	query := "RETURNING "
 
-	keys := splitNotQuotes(param, ',', false)
+	keys := splitAtomic(param, ',')
 
 	for i, key := range keys {
 		if i == len(keys)-1 {
@@ -611,7 +616,7 @@ func buildReturning(param string) (string, error) {
 	return query, nil
 }
 
-func buildWhere(params url.Values) (string, []any, error) {
+func buildWhere(table string, schemaCols map[string]string, params url.Values) (string, []any, error) {
 
 	var args []any
 	query := "Where "
@@ -621,35 +626,18 @@ func buildWhere(params url.Values) (string, []any, error) {
 	for name, val := range params {
 		if name == "or" {
 			if len(val[0]) > 2 {
-				orParams := splitNotQuotes(val[0][1:len(val[0])-1], ',', true)
+				orParams := splitParenthesis(val[0][1 : len(val[0])-1])
 				fmt.Println(orParams)
 				hasWhere = true
-
-				for _, v := range orParams {
-					fmt.Println(v)
-					keys := splitNotQuotes(v, '.', false)
-					fmt.Println(keys)
-					if i != 0 {
-						query += "OR "
-					}
-
-					query += keys[0] + " "
-
-					for i = 1; i < len(keys); i++ {
-						if mapOperator(keys[i]) != "" {
-							query += mapOperator(keys[i]) + " "
-						} else {
-							query += "? "
-							args = append(args, keys[i])
-						}
-					}
-					i++
-				}
 			}
 			continue
 		}
 
 		if name != "order" && name != "select" {
+			if schemaCols[name] == "" {
+				return "", nil, invalidColErr(name, table)
+			}
+
 			hasWhere = true
 		} else {
 			continue
@@ -661,7 +649,7 @@ func buildWhere(params url.Values) (string, []any, error) {
 
 		query += name + " "
 
-		keys := splitNotQuotes(val[0], '.', false)
+		keys := splitAtomic(val[0], '.')
 
 		for _, v := range keys {
 			if mapOperator(v) != "" {
@@ -682,7 +670,49 @@ func buildWhere(params url.Values) (string, []any, error) {
 	return query, args, nil
 }
 
-func splitNotQuotes(s string, delimiter rune, includeQuotes bool) []string {
+func splitParenthesis(s string) [][]string {
+	inQuotes := false
+	var fullList [][]string
+	var currList []string
+	currStr := ""
+	escaped := false
+
+	for _, v := range s {
+		if escaped {
+			currStr += string(v)
+			escaped = false
+		} else if v == '\\' {
+			escaped = true
+		} else if v == '"' {
+			inQuotes = !inQuotes
+		} else if v == ',' && !inQuotes {
+			currList = append(currList, currStr)
+			fullList = append(fullList, currList)
+			currList = nil
+			currStr = ""
+		} else if v == '.' && !inQuotes {
+			if mapOperator(currStr) != "" {
+				currList = append(currList, mapOperator(currStr))
+			} else {
+				currList = append(currList, currStr)
+			}
+			currStr = ""
+		} else {
+			currStr += string(v)
+		}
+	}
+
+	if currStr != "" {
+		currList = append(currList, currStr)
+	}
+	if currList != nil {
+		fullList = append(fullList, currList)
+	}
+
+	return fullList
+}
+
+func splitAtomic(s string, delimiter rune) []string {
 	inQuotes := false
 	var list []string
 	currStr := ""
@@ -702,9 +732,6 @@ func splitNotQuotes(s string, delimiter rune, includeQuotes bool) []string {
 
 		if v == '"' {
 			inQuotes = !inQuotes
-			if includeQuotes {
-				currStr += "\""
-			}
 			continue
 		}
 
