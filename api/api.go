@@ -29,31 +29,31 @@ func Run(app *http.ServeMux) {
 }
 
 func handleGetRows() http.HandlerFunc {
-	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 		return dao.SelectRows(req)
 	})
 }
 
 func handlePostRows() http.HandlerFunc {
-	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 		return dao.InsertRows(req)
 	})
 }
 
 func handlePatchRows() http.HandlerFunc {
-	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 		return dao.UpdateRows(req)
 	})
 }
 
 func handleDeleteRows() http.HandlerFunc {
-	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 		return dao.DeleteRows(req)
 	})
 }
 
 func handleCreateDb() http.HandlerFunc {
-	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 
 		err := dao.CreateDb(req)
 		return nil, err
@@ -61,7 +61,7 @@ func handleCreateDb() http.HandlerFunc {
 }
 
 func handleDeleteDb() http.HandlerFunc {
-	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 
 		err := dao.DeleteDb(req)
 		return nil, err
@@ -69,56 +69,56 @@ func handleDeleteDb() http.HandlerFunc {
 }
 
 func handleInvalidateSchema() http.HandlerFunc {
-	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 		err := dao.InvalidateSchema()
 		return nil, err
 	})
 }
 
 func handleEditSchema() http.HandlerFunc {
-	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 		err := dao.EditSchema(req)
 		return nil, err
 	})
 }
 
 func handleCreateTable() http.HandlerFunc {
-	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 		err := dao.CreateTable(req)
 		return nil, err
 	})
 }
 
 func handleDropTable() http.HandlerFunc {
-	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 		err := dao.DropTable(req)
 		return nil, err
 	})
 }
 
 func handleRenameTable() http.HandlerFunc {
-	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 		err := dao.RenameTable(req)
 		return nil, err
 	})
 }
 
 func handleRenameColumns() http.HandlerFunc {
-	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 		err := dao.RenameColumns(req)
 		return nil, err
 	})
 }
 
 func handleAddColumns() http.HandlerFunc {
-	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 		err := dao.AddColumns(req)
 		return nil, err
 	})
 }
 
 func handleDropColumns() http.HandlerFunc {
-	return db.WithDb(func(dao *db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 		err := dao.DropColumns(req)
 		return nil, err
 	})

@@ -11,25 +11,9 @@ import (
 	"os"
 )
 
-func (dao Database) EditSchema(req *http.Request) error {
-	type body struct {
-		Query string `json:"query"`
-		Args  []any  `json:"args"`
-	}
-
-	var bod body
-
-	err := json.NewDecoder(req.Body).Decode(&bod)
-	if err != nil {
-		return err
-	}
-
-	_, err = dao.client.Exec(bod.Query, bod.Args...)
-	if err != nil {
-		return err
-	}
-
-	return dao.InvalidateSchema()
+// creates a schema cache and stores it for an already existing turso db
+func (dao Database) RegisterDb(req *http.Request) error {
+	return nil
 }
 
 // for use with the primary database
@@ -121,22 +105,6 @@ func (dao Database) CreateDb(req *http.Request) error {
 	if err != nil {
 		return err
 	}
-
-	// if reqBod.SchemaQuery == "" {
-	// 	return nil
-	// } else {
-	// 	client, err := sql.Open("libsql", fmt.Sprintf("libsql://%s-%s.turso.io?authToken=%s", name, org, token))
-	// 	if err != nil {
-	// 		return err
-	// 	}
-
-	// 	_, err = client.Exec(reqBod.SchemaQuery, reqBod.SchemaArgs...)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	defer client.Close()
-
-	// }
 
 	return nil
 }

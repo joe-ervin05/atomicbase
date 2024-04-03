@@ -8,139 +8,6 @@ import (
 	"net/url"
 )
 
-type Column struct {
-	Type       string `json:"type"`
-	PrimaryKey bool   `json:"primaryKey"`
-	References string `json:"references"`
-	OnDelete   string `json:"onDelete"`
-	OnUpdate   string `json:"onUpdate"`
-}
-
-func (dao Database) RenameTable(req *http.Request) error {
-	name := req.PathValue("name")
-
-	if dao.Schema.Tables[name] == nil {
-		return InvalidTblErr(name)
-	}
-
-	return nil
-}
-
-func (dao Database) RenameColumns(req *http.Request) error {
-	name := req.PathValue("name")
-
-	if dao.Schema.Tables[name] == nil {
-		return InvalidTblErr(name)
-	}
-
-	return nil
-}
-
-func (dao Database) AddColumns(req *http.Request) error {
-	name := req.PathValue("name")
-
-	if dao.Schema.Tables[name] == nil {
-		return InvalidTblErr(name)
-	}
-
-	return nil
-}
-
-func (dao Database) DropColumns(req *http.Request) error {
-	name := req.PathValue("name")
-
-	if dao.Schema.Tables[name] == nil {
-		return InvalidTblErr(name)
-	}
-
-	column := req.PathValue("column")
-
-	if dao.Schema.Tables[name][column] == "" {
-		return invalidColErr(column, name)
-	}
-
-	_, err := dao.client.Exec("ALTER TABLE %s DROP COLUMN %s", name, column)
-
-	return err
-}
-
-func (dao Database) CreateTable(req *http.Request) error {
-	name := req.PathValue("name")
-	query := "CREATE TABLE " + name + " ("
-
-	var cols map[string]Column
-
-	err := json.NewDecoder(req.Body).Decode(&cols)
-	if err != nil {
-		return err
-	}
-
-	type fKey struct {
-		toTbl string
-		toCol string
-		col   string
-	}
-
-	var fKeys []fKey
-
-	for n, col := range cols {
-
-		query += n + " " + col.Type
-		if col.PrimaryKey {
-			query += " PRIMARY KEY"
-		}
-		if col.References != "" {
-			quoted := false
-			fk := fKey{"", "", n}
-			for i := 0; fk.toTbl == "" && i < len(col.References); i++ {
-				if col.References[i] == '\'' {
-					quoted = !quoted
-				}
-				if col.References[i] == '.' && !quoted {
-					fk.toTbl = col.References[:i]
-					fk.toCol = col.References[i+1:]
-				}
-			}
-			fKeys = append(fKeys, fk)
-		}
-
-		query += ", "
-	}
-
-	for _, val := range fKeys {
-		query += fmt.Sprintf("FOREIGN KEY(%s) REFERENCES %s(%s) ", val.col, val.toTbl, val.toCol)
-		if cols[val.col].OnDelete != "" {
-			query += "ON DELETE " + cols[val.col].OnDelete + " "
-		}
-		if cols[val.col].OnUpdate != "" {
-			query += "ON UPDATE " + cols[val.col].OnUpdate + " "
-		}
-		query += ", "
-
-	}
-
-	query = query[:len(query)-2] + ")"
-
-	_, err = dao.client.Exec(query)
-
-	return err
-}
-
-func (dao Database) DropTable(req *http.Request) error {
-	name := req.PathValue("name")
-
-	if dao.Schema.Tables[name] == nil {
-		return InvalidTblErr(name)
-	}
-
-	_, err := dao.client.Exec("DROP TABLE " + name)
-	if err != nil {
-		return err
-	}
-
-	return dao.InvalidateSchema()
-}
-
 func (dao Database) SelectRows(req *http.Request) ([]interface{}, error) {
 	params := req.URL.Query()
 	table := req.PathValue("table")
@@ -345,7 +212,7 @@ func (dao Database) UpdateRows(req *http.Request) ([]interface{}, error) {
 
 func buildUpdate(cols map[string]any, table string) (string, []any, error) {
 
-	query := "UPDATE " + table + " SET "
+	query := "UPDATE [" + table + "] SET "
 	args := make([]any, len(cols))
 
 	colI := 0
@@ -360,7 +227,7 @@ func buildUpdate(cols map[string]any, table string) (string, []any, error) {
 
 func buildUpsert(colSlice []map[string]any, table string, pk string) (string, []any, error) {
 
-	query := "INSERT INTO " + table + " ( "
+	query := "INSERT INTO [" + table + "] ( "
 	args := make([]any, len(colSlice)*len(colSlice[0]))
 	valHolder := "( "
 
@@ -402,7 +269,7 @@ func buildUpsert(colSlice []map[string]any, table string, pk string) (string, []
 
 func buildInsert(cols map[string]any, table string) (string, []any, error) {
 
-	query := "INSERT INTO " + table + " "
+	query := "INSERT INTO [" + table + "] "
 	args := make([]any, len(cols))
 
 	i := 0
@@ -627,40 +494,55 @@ func buildWhere(table string, schemaCols map[string]string, params url.Values) (
 		if name == "or" {
 			if len(val[0]) > 2 {
 				orParams := splitParenthesis(val[0][1 : len(val[0])-1])
-				fmt.Println(orParams)
+				for _, ops := range orParams {
+					if i != 0 {
+						query += "OR "
+					}
+
+					query += "[" + ops[0] + "]" + " "
+					for i = 1; i < len(ops); i++ {
+						if mapOperator(ops[i]) != "" {
+							query += mapOperator(ops[i]) + " "
+						} else {
+							query += "? "
+							args = append(args, ops[i])
+						}
+					}
+					i++
+				}
+
 				hasWhere = true
 			}
 			continue
 		}
 
 		if name != "order" && name != "select" {
-			if schemaCols[name] == "" {
+			normalizedParam := unQuoteParam(name)
+			if schemaCols[normalizedParam] == "" {
 				return "", nil, invalidColErr(name, table)
 			}
 
 			hasWhere = true
-		} else {
-			continue
-		}
 
-		if i != 0 {
-			query += "AND "
-		}
-
-		query += name + " "
-
-		keys := splitAtomic(val[0], '.')
-
-		for _, v := range keys {
-			if mapOperator(v) != "" {
-				query += mapOperator(v) + " "
-			} else {
-				query += "? "
-
-				args = append(args, v)
+			if i != 0 {
+				query += "AND "
 			}
+
+			query += "[" + normalizedParam + "]" + " "
+
+			keys := splitAtomic(val[0], '.')
+
+			for _, v := range keys {
+				if mapOperator(v) != "" {
+					query += mapOperator(v) + " "
+				} else {
+					query += "? "
+
+					args = append(args, v)
+				}
+			}
+			i++
 		}
-		i++
 	}
 
 	if !hasWhere {
@@ -691,11 +573,7 @@ func splitParenthesis(s string) [][]string {
 			currList = nil
 			currStr = ""
 		} else if v == '.' && !inQuotes {
-			if mapOperator(currStr) != "" {
-				currList = append(currList, mapOperator(currStr))
-			} else {
-				currList = append(currList, currStr)
-			}
+			currList = append(currList, currStr)
 			currStr = ""
 		} else {
 			currStr += string(v)
@@ -710,6 +588,23 @@ func splitParenthesis(s string) [][]string {
 	}
 
 	return fullList
+}
+
+func unQuoteParam(param string) string {
+	escaped := false
+	newStr := ""
+	for _, v := range param {
+		if escaped {
+			newStr += string(v)
+			escaped = false
+		} else if v == '\\' {
+			escaped = true
+		} else if v != '"' {
+			newStr += string(v)
+		}
+	}
+
+	return newStr
 }
 
 func splitAtomic(s string, delimiter rune) []string {

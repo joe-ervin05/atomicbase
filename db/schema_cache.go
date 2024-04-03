@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/gob"
-	"fmt"
+	"log"
 	"os"
 	"sync"
 )
@@ -99,28 +99,52 @@ func schemaPks(db *sql.DB) (map[string]string, error) {
 
 }
 
-func saveSchema(schema SchemaCache) error {
-	// prevent concurrent writes
-	lock.Lock()
-	defer lock.Unlock()
+func (dao Database) saveSchema() error {
+	if dao.id == 0 {
+		// prevent concurrent writes
+		lock.Lock()
+		defer lock.Unlock()
+
+		var buf bytes.Buffer
+
+		file, err := os.Create("atomicdata/schema.gob")
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		enc := gob.NewEncoder(&buf)
+
+		err = enc.Encode(dao.Schema)
+		if err != nil {
+			return err
+		}
+
+		_, err = file.Write(buf.Bytes())
+
+		return err
+	}
+
+	client, err := sql.Open("libsql", "file:atomicdata/primary.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = client.Ping()
+
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	var buf bytes.Buffer
-
-	file, err := os.Create("atomicdata/schema.gob")
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
 	enc := gob.NewEncoder(&buf)
 
-	err = enc.Encode(schema)
+	err = enc.Encode(dao.Schema)
 	if err != nil {
 		return err
 	}
 
-	_, err = file.Write(buf.Bytes())
-	fmt.Println("completed schema save")
+	_, err = client.Exec("UPDATE databases SET schema = ? WHERE id = ?", buf.Bytes(), dao.id)
 
 	return err
 }

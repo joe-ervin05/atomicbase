@@ -10,7 +10,7 @@ import (
 	"os"
 )
 
-type DbHandler func(db *Database, req *http.Request) ([]interface{}, error)
+type DbHandler func(db Database, req *http.Request) ([]interface{}, error)
 
 func WithDb(handler DbHandler) http.HandlerFunc {
 
@@ -55,28 +55,26 @@ func WithDb(handler DbHandler) http.HandlerFunc {
 	}
 }
 
-func connDb(req *http.Request) (*Database, error) {
+func connDb(req *http.Request) (Database, error) {
 	dbName := req.Header.Get("DB-Name")
 
 	dao, err := connPrimary()
 	if err != nil {
-		return &Database{}, err
+		return Database{}, err
 	}
 
-	if dbName == "" {
-		return dao, nil
-	}
-
-	err = dao.connTurso(dbName)
-	if err != nil {
-		return &Database{}, err
+	if dbName != "" {
+		err = dao.connTurso(dbName)
+		if err != nil {
+			return Database{}, err
+		}
 	}
 
 	return dao, nil
 
 }
 
-func connPrimary() (*Database, error) {
+func connPrimary() (Database, error) {
 	client, err := sql.Open("libsql", "file:atomicdata/primary.db")
 	if err != nil {
 		log.Fatal(err)
@@ -92,33 +90,20 @@ func connPrimary() (*Database, error) {
 
 	data, err := os.ReadFile("atomicdata/schema.gob")
 	if err != nil {
-		pks, err := schemaPks(client)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fks, err := schemaFks(client)
-		if err != nil {
-			log.Fatal(err)
-		}
-		cols, err := schemaCols(client)
-		if err != nil {
-			log.Fatal(err)
+		if errors.Is(err, os.ErrNotExist) {
+			dao := Database{client, SchemaCache{}, 0}
+
+			err = dao.InvalidateSchema()
+
+			return dao, err
 		}
 
-		schema = SchemaCache{cols, pks, fks}
-
-		err = saveSchema(schema)
-		if err != nil {
-			log.Fatal(err)
-		}
-	} else {
-		schema, err = loadSchema(data)
-		if err != nil {
-			return &Database{}, err
-		}
+		log.Fatal(err)
 	}
 
-	return &Database{client, schema, 0}, nil
+	schema, err = loadSchema(data)
+
+	return Database{client, schema, 0}, err
 }
 
 func (dao *Database) connTurso(dbName string) error {
@@ -133,6 +118,7 @@ func (dao *Database) connTurso(dbName string) error {
 	if err != nil {
 		return err
 	}
+	// close the connection with the primary database
 	dao.client.Close()
 
 	client, err := sql.Open("libsql", fmt.Sprintf("libsql://%s-%s.turso.io?authToken=%s", dbName, org, token))
