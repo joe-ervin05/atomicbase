@@ -11,7 +11,7 @@ Atomicbase provides a thin abstraction over your queries and maintains a separat
 
 Through the combination of parameterizing values and checking table and column names against the schema cache, no unchecked sql should ever be executed when querying a database.
 
-This does not always make sql injection impossible though because sqlite allows for table and column names to be anything including malicious sql queries as long as it is quoted. This means any changes to a database's schema based on user input must be sanitized before they are executed.
+This does not always make sql injection impossible though because sqlite allows for table and column names to be anything including malicious sql. This means any changes to a database's schema based on user input must be sanitized before they are executed.
 
 atomicbase also has a [javascript SDK](https://github.com/joe-ervin05/atomicbase-js).
 
