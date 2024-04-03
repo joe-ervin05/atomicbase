@@ -56,10 +56,12 @@ func init() {
 	CREATE TABLE IF NOT EXISTS databases 
 	(
 		id INTEGER PRIMARY KEY, 
-		name TEXT, 
+		name TEXT NOT NULL UNIQUE, 
 		token TEXT NOT NULL UNIQUE,
 		schema BLOB
-	);`)
+	);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_databases_name ON databases (name);
+	`)
 }
 
 func (dao Database) QueryDbInfo(dbName string) (int32, string, SchemaCache, error) {
@@ -84,7 +86,6 @@ func (dao Database) QueryDbInfo(dbName string) (int32, string, SchemaCache, erro
 
 }
 
-// runs a query and returns a json bytes encoding of the result
 func (dao Database) QueryMap(query string, args ...any) ([]interface{}, error) {
 	rows, err := dao.client.Query(query, args...)
 	if err != nil {

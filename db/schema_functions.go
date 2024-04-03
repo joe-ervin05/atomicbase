@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 type Column struct {
@@ -126,12 +127,12 @@ func (dao Database) CreateTable(req *http.Request) error {
 	}
 
 	for _, val := range fKeys {
-		query += fmt.Sprintf("FOREIGN KEY(%s) REFERENCES %s(%s) ", val.col, val.toTbl, val.toCol)
+		query += fmt.Sprintf("FOREIGN KEY([%s]) REFERENCES [%s]([%s]) ", val.col, val.toTbl, val.toCol)
 		if cols[val.col].OnDelete != "" {
-			query += "ON DELETE " + cols[val.col].OnDelete + " "
+			query += "ON DELETE " + mapOnAction(cols[val.col].OnDelete) + " "
 		}
 		if cols[val.col].OnUpdate != "" {
-			query += "ON UPDATE " + cols[val.col].OnUpdate + " "
+			query += "ON UPDATE " + mapOnAction(cols[val.col].OnUpdate) + " "
 		}
 		query += ", "
 
@@ -178,4 +179,39 @@ func (dao Database) EditSchema(req *http.Request) error {
 	}
 
 	return dao.InvalidateSchema()
+}
+
+// map functions guarantee the input is an expected expression
+// to limit vulnerabilities and prevent unexpected query affects
+
+func mapColType(str string) string {
+	switch strings.ToLower(str) {
+	case "text":
+		return "TEXT"
+	case "integer":
+		return "INTEGER"
+	case "real":
+		return "REAL"
+	case "blob":
+		return "BLOB"
+	default:
+		return ""
+	}
+}
+
+func mapOnAction(str string) string {
+	switch strings.ToLower(str) {
+	case "no action":
+		return "NO ACTION"
+	case "restrict":
+		return "RESTRICT"
+	case "set null":
+		return "SET NULL"
+	case "set default":
+		return "SET DEFAULT"
+	case "cascade":
+		return "CASCADE"
+	default:
+		return ""
+	}
 }
