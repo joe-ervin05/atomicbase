@@ -4,12 +4,39 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/gob"
+	"fmt"
 	"log"
 	"os"
 	"sync"
 )
 
 var lock sync.Mutex
+
+// TODO join all the schema queries into one query with multiple joins
+
+func querySchema(db *sql.DB) (SchemaCache, error) {
+	var fks []Fk
+	tblMap := make(TblMap)
+	pkMap := make(map[string]string)
+
+	rows, err := db.Query(`
+		SELECT m.name as "table", f."table" as "references", f."from", f."to", l.name as col, l.type as colType, p.name as pk
+		FROM sqlite_master m
+		JOIN pragma_foreign_key_list(m.name) f ON m.name != f."table"
+		JOIN pragma_table_info(m.name) l
+		JOIN pragma_table_info(m.name) p ON p.pk = 1
+		WHERE m.type = 'table'
+		ORDER BY m.name;
+	`)
+	if err != nil {
+		return SchemaCache{}, err
+	}
+
+	_ = rows
+
+	return SchemaCache{tblMap, pkMap, fks}, nil
+
+}
 
 func schemaFks(db *sql.DB) ([]Fk, error) {
 
@@ -39,18 +66,19 @@ func schemaFks(db *sql.DB) ([]Fk, error) {
 	return fks, err
 }
 
-func schemaCols(db *sql.DB) (TblMap, error) {
+func schemaCols(db *sql.DB) (TblMap, map[string]string, error) {
 
 	tblMap := make(TblMap)
+	pkMap := make(map[string]string)
 
 	rows, err := db.Query(`
-		SELECT m.name, l.name as col, l.type as colType
+		SELECT m.name, l.name as col, l.type as colType, l.pk
 		FROM sqlite_master m
 		JOIN pragma_table_info(m.name) l
 		WHERE m.type = 'table'
 	`)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
@@ -58,46 +86,53 @@ func schemaCols(db *sql.DB) (TblMap, error) {
 		var col sql.NullString
 		var colType sql.NullString
 		var name sql.NullString
+		var pk sql.NullBool
 
-		rows.Scan(&name, &col, &colType)
+		rows.Scan(&name, &col, &colType, &pk)
 
 		if tblMap[name.String] == nil {
 			tblMap[name.String] = make(map[string]string)
 		}
 		tblMap[name.String][col.String] = colType.String
+		if pk.Bool {
+			pkMap[name.String] = col.String
+		}
 	}
 
-	return tblMap, rows.Err()
+	fmt.Println("test")
+	fmt.Println(tblMap, pkMap)
+
+	return tblMap, pkMap, rows.Err()
 
 }
 
-func schemaPks(db *sql.DB) (map[string]string, error) {
+// func schemaPks(db *sql.DB) (map[string]string, error) {
 
-	pkMap := make(map[string]string)
+// 	pkMap := make(map[string]string)
 
-	rows, err := db.Query(`
-		SELECT m.name, l.name as pk
-		FROM sqlite_master m
-		JOIN pragma_table_info(m.name) l ON l.pk = 1
-		WHERE m.type = 'table'
-		ORDER BY m.name;
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+// 	rows, err := db.Query(`
+// 		SELECT m.name, l.name as pk
+// 		FROM sqlite_master m
+// 		JOIN pragma_table_info(m.name) l ON l.pk = 1
+// 		WHERE m.type = 'table'
+// 		ORDER BY m.name;
+// 	`)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	defer rows.Close()
 
-	for rows.Next() {
-		var pk sql.NullString
-		var name sql.NullString
+// 	for rows.Next() {
+// 		var pk sql.NullString
+// 		var name sql.NullString
 
-		rows.Scan(&name, &pk)
-		pkMap[name.String] = pk.String
-	}
+// 		rows.Scan(&name, &pk)
+// 		pkMap[name.String] = pk.String
+// 	}
 
-	return pkMap, rows.Err()
+// 	return pkMap, rows.Err()
 
-}
+// }
 
 func (dao Database) saveSchema() error {
 	if dao.id == 0 {

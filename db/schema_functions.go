@@ -17,15 +17,11 @@ type Column struct {
 
 func (dao *Database) InvalidateSchema() error {
 
-	pks, err := schemaPks(dao.client)
+	cols, pks, err := schemaCols(dao.client)
 	if err != nil {
 		return err
 	}
 	fks, err := schemaFks(dao.client)
-	if err != nil {
-		return err
-	}
-	cols, err := schemaCols(dao.client)
 	if err != nil {
 		return err
 	}
@@ -65,7 +61,7 @@ func (dao Database) AddColumns(req *http.Request) error {
 	return nil
 }
 
-func (dao Database) DropColumns(req *http.Request) error {
+func (dao Database) DropColumn(req *http.Request) error {
 	name := req.PathValue("name")
 
 	if dao.Schema.Tables[name] == nil {
@@ -103,8 +99,11 @@ func (dao Database) CreateTable(req *http.Request) error {
 	var fKeys []fKey
 
 	for n, col := range cols {
+		if mapColType(col.Type) == "" {
+			return InvalidTypeErr(n, col.Type)
+		}
 
-		query += fmt.Sprintf("[%s] %s", n, col.Type)
+		query += fmt.Sprintf("[%s] %s", n, mapColType(col.Type))
 		if col.PrimaryKey {
 			query += " PRIMARY KEY"
 		}
@@ -117,7 +116,13 @@ func (dao Database) CreateTable(req *http.Request) error {
 				}
 				if col.References[i] == '.' && !quoted {
 					fk.toTbl = col.References[:i]
+					if dao.Schema.Tables[fk.toTbl] == nil {
+						return InvalidTblErr(fk.toTbl)
+					}
 					fk.toCol = col.References[i+1:]
+					if dao.Schema.Tables[fk.toTbl][fk.toCol] == "" {
+						return InvalidColErr(fk.toCol, fk.toTbl)
+					}
 				}
 			}
 			fKeys = append(fKeys, fk)

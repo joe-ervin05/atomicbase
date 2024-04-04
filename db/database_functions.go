@@ -2,6 +2,7 @@ package db
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/gob"
 	"encoding/json"
 	"errors"
@@ -11,9 +12,93 @@ import (
 	"os"
 )
 
+// gets all turso dbs within an organization and stores them
+func (dao Database) RegisterAllDbs(req *http.Request) error {
+	org := os.Getenv("TURSO_ORGANIZATION")
+	if org == "" {
+		return errors.New("TURSO_ORGANIZATION is not set but is required for managing turso databases")
+	}
+	token := os.Getenv("TURSO_API_KEY")
+	if token == "" {
+		return errors.New("TURSO_API_KEY is not set but is required for managing turso databases")
+	}
+
+	return nil
+}
+
 // creates a schema cache and stores it for an already existing turso db
 func (dao Database) RegisterDb(req *http.Request) error {
-	return nil
+	name := req.PathValue("name")
+	dbToken := req.Header.Get("DB-Token")
+	var err error
+
+	if dbToken == "" {
+		dbToken, err = createDbToken(name)
+		if err != nil {
+			fmt.Println("token error")
+			return err
+		}
+	}
+
+	org := os.Getenv("TURSO_ORGANIZATION")
+	if org == "" {
+		return errors.New("TURSO_ORGANIZATION is not set but is required for managing turso databases")
+	}
+	token := os.Getenv("TURSO_API_KEY")
+	if token == "" {
+		return errors.New("TURSO_API_KEY is not set but is required for managing turso databases")
+	}
+
+	client := &http.Client{}
+	request, err := http.NewRequest("GET", fmt.Sprintf("https://api.turso.tech/v1/organizations/%s/databases/%s", org, name), nil)
+	if err != nil {
+		fmt.Println("retrieve error")
+		return err
+	}
+
+	request.Header.Set("Authorization", "Bearer "+token)
+
+	res, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	if res.StatusCode != 200 {
+		fmt.Println("retrieve error 2")
+		return errors.New(res.Status)
+	}
+
+	newClient, err := sql.Open("libsql", fmt.Sprintf("libsql://%s-%s.turso.io?authToken=%s", name, org, dbToken))
+	if err != nil {
+		return err
+	}
+
+	err = newClient.Ping()
+
+	if err != nil {
+		return err
+	}
+
+	cols, pks, err := schemaCols(newClient)
+	if err != nil {
+		return err
+	}
+	fks, err := schemaFks(newClient)
+	if err != nil {
+		return err
+	}
+
+	var buf bytes.Buffer
+	schema := SchemaCache{cols, pks, fks}
+	enc := gob.NewEncoder(&buf)
+
+	err = enc.Encode(schema)
+	if err != nil {
+		return err
+	}
+
+	_, err = dao.client.Exec("INSERT INTO databases (name, token, schema) values (?, ?, ?)", name, dbToken, buf.Bytes())
+
+	return err
 }
 
 func (dao Database) ListDbs(req *http.Request) ([]interface{}, error) {
@@ -68,29 +153,7 @@ func (dao Database) CreateDb(req *http.Request) error {
 		return errors.New(res.Status)
 	}
 
-	req, err = http.NewRequest("POST", fmt.Sprintf("https://api.turso.tech/v1/organizations/%s/databases/%s/auth/tokens", org, name), nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	res, err = client.Do(req)
-	if err != nil {
-		return err
-	}
-	if res.StatusCode != 200 {
-		return errors.New(res.Status)
-	}
-
-	dec := json.NewDecoder(res.Body)
-	dec.DisallowUnknownFields()
-
-	type jwtBody struct {
-		Jwt string `json:"jwt"`
-	}
-
-	var jwtBod jwtBody
-	err = dec.Decode(&jwtBod)
+	newToken, err := createDbToken(name)
 
 	if err != nil {
 		return err
@@ -105,7 +168,7 @@ func (dao Database) CreateDb(req *http.Request) error {
 		return err
 	}
 
-	_, err = dao.client.Exec("INSERT INTO databases (name, token, schema) values (?, ?, ?)", name, jwtBod.Jwt, buf.Bytes())
+	_, err = dao.client.Exec("INSERT INTO databases (name, token, schema) values (?, ?, ?)", name, newToken, buf.Bytes())
 	if err != nil {
 		return err
 	}
@@ -150,4 +213,42 @@ func (dao Database) DeleteDb(req *http.Request) error {
 
 	return nil
 
+}
+
+func createDbToken(dbName string) (string, error) {
+	org := os.Getenv("TURSO_ORGANIZATION")
+	if org == "" {
+		return "", errors.New("TURSO_ORGANIZATION is not set but is required for managing turso databases")
+	}
+	token := os.Getenv("TURSO_API_KEY")
+	if token == "" {
+		return "", errors.New("TURSO_API_KEY is not set but is required for managing turso databases")
+	}
+
+	client := &http.Client{}
+	req, err := http.NewRequest("POST", fmt.Sprintf("https://api.turso.tech/v1/organizations/%s/databases/%s/auth/tokens", org, dbName), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	res, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	if res.StatusCode != 200 {
+		return "", errors.New(res.Status)
+	}
+
+	dec := json.NewDecoder(res.Body)
+	dec.DisallowUnknownFields()
+
+	type jwtBody struct {
+		Jwt string `json:"jwt"`
+	}
+
+	var jwtBod jwtBody
+	err = dec.Decode(&jwtBod)
+
+	return jwtBod.Jwt, err
 }

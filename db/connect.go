@@ -12,30 +12,25 @@ import (
 
 type DbHandler func(db Database, req *http.Request) ([]interface{}, error)
 
-func WithDb(handler DbHandler) http.HandlerFunc {
+type Response struct {
+	Data  []interface{} `json:"data"`
+	Error interface{}   `json:"error"`
+}
 
+// for endpoints that only work with the primary database
+func WithPrimary(handler DbHandler) http.HandlerFunc {
 	return func(wr http.ResponseWriter, req *http.Request) {
-		type Response struct {
-			Data  []interface{} `json:"data"`
-			Error interface{}   `json:"error"`
-		}
+		dao, err := connPrimary()
 
 		req.Body = http.MaxBytesReader(wr, req.Body, 1048576)
-		dao, err := connDb(req)
 		if err != nil {
-			resp := Response{nil, err.Error()}
-			body, _ := json.Marshal(&resp)
-			wr.WriteHeader(http.StatusInternalServerError)
-			wr.Write(body)
+			respErr(wr, err)
 			return
 		}
 
 		data, err := handler(dao, req)
 		if err != nil {
-			resp := Response{nil, err.Error()}
-			body, _ := json.Marshal(&resp)
-			wr.WriteHeader(http.StatusInternalServerError)
-			wr.Write(body)
+			respErr(wr, err)
 			return
 		}
 
@@ -43,16 +38,54 @@ func WithDb(handler DbHandler) http.HandlerFunc {
 
 		body, err := json.Marshal(&resp)
 		if err != nil {
-			resp := Response{nil, err.Error()}
-			body, _ := json.Marshal(&resp)
-			wr.WriteHeader(http.StatusInternalServerError)
-			wr.Write(body)
+			respErr(wr, err)
 			return
 		}
-		defer req.Body.Close()
 
 		wr.Write(body)
+		defer dao.client.Close()
+		defer req.Body.Close()
+
 	}
+}
+
+// for endpoints that can use either the primary or an external database
+func WithDb(handler DbHandler) http.HandlerFunc {
+	return func(wr http.ResponseWriter, req *http.Request) {
+		dao, err := connDb(req)
+
+		req.Body = http.MaxBytesReader(wr, req.Body, 1048576)
+		if err != nil {
+			respErr(wr, err)
+			return
+		}
+
+		data, err := handler(dao, req)
+		if err != nil {
+			respErr(wr, err)
+			return
+		}
+
+		resp := Response{data, nil}
+
+		body, err := json.Marshal(&resp)
+		if err != nil {
+			respErr(wr, err)
+			return
+		}
+
+		wr.Write(body)
+		defer dao.client.Close()
+		defer req.Body.Close()
+
+	}
+}
+
+func respErr(wr http.ResponseWriter, err error) {
+	resp := Response{nil, err.Error()}
+	body, _ := json.Marshal(&resp)
+	wr.WriteHeader(http.StatusInternalServerError)
+	wr.Write(body)
 }
 
 func connDb(req *http.Request) (Database, error) {
