@@ -18,9 +18,7 @@ This does not always make sql injection impossible though because sqlite allows 
 
 ## Contributing
 
-Atomicbase is fully free and open source under the MIT license. It is free for any kind of use.
-
-The only thing that I ask is that if you profit off of it significantly please consider contributing to its development.
+Atomicbase is fully free and open source under the Apache-2.0 license. It is free for any kind of use.
 
 All contributions are appreciated including:
 - [Contributing to the source code](https://github.com/joe-ervin05/atomicbase/blob/main/CONTRIBUTING.MD)
