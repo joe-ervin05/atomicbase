@@ -3,7 +3,6 @@
 
 > [!IMPORTANT]  
 > **Atomicbase is in very early stages of development.** It is not ready for use in projects yet.
-> The more help we can get from the community, the faster it can be launched! Help of any form is greatly appreciated.
 
 Atomicbase is a rest api that makes managing and querying turso databases significantly easier. It is especially useful for when your databases do not all share one schema.
 
@@ -13,7 +12,9 @@ Through the combination of parameterizing values and checking table and column n
 
 This does not always make sql injection impossible though because sqlite allows for table and column names to be anything including malicious sql. This means any changes to a database's schema based on user input must be sanitized before they are executed.
 
-atomicbase also has a [javascript SDK](https://github.com/joe-ervin05/atomicbase-js).
+## SDKs
+
+- [javascript SDK](https://github.com/joe-ervin05/atomicbase-js).
 
 ## Contributing
 
