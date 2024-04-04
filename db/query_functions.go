@@ -24,14 +24,14 @@ func (dao Database) SelectRows(req *http.Request) ([]interface{}, error) {
 		sel = params["select"][0]
 	}
 
-	sel, err := buildSelect(sel, table, dao.Schema)
+	sel, err := dao.Schema.buildSelect(sel, table)
 	if err != nil {
 		return nil, err
 	}
 
 	query += sel
 
-	where, wArgs, err := buildWhere(table, dao.Schema.Tables[table], params)
+	where, wArgs, err := dao.Schema.buildWhere(table, params)
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +40,7 @@ func (dao Database) SelectRows(req *http.Request) ([]interface{}, error) {
 	args = append(args, wArgs...)
 
 	if params["order"] != nil {
-		orderBy, err := buildOrder(params["order"][0])
+		orderBy, err := dao.Schema.buildOrder(table, params["order"][0])
 		if err != nil {
 			return nil, err
 		}
@@ -62,9 +62,9 @@ func (dao Database) DeleteRows(req *http.Request) ([]interface{}, error) {
 		return nil, InvalidTblErr(table)
 	}
 
-	query := "DELETE FROM " + table + " "
+	query := "DELETE FROM [" + table + "] "
 
-	where, args, err := buildWhere(table, dao.Schema.Tables[table], params)
+	where, args, err := dao.Schema.buildWhere(table, params)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (dao Database) DeleteRows(req *http.Request) ([]interface{}, error) {
 	query += where
 
 	if params["select"] != nil {
-		selQuery, err := buildReturning(params["select"][0])
+		selQuery, err := dao.Schema.buildReturning(table, params["select"][0])
 		if err != nil {
 			return nil, err
 		}
@@ -141,7 +141,7 @@ func (dao Database) InsertRows(req *http.Request) ([]interface{}, error) {
 	}
 
 	if params["select"] != nil {
-		selQuery, err := buildReturning(params["select"][0])
+		selQuery, err := dao.Schema.buildReturning(table, params["select"][0])
 		if err != nil {
 			return nil, err
 		}
@@ -173,12 +173,26 @@ func (dao Database) UpdateRows(req *http.Request) ([]interface{}, error) {
 		return nil, err
 	}
 
-	query, args, err := buildUpdate(cols, table)
-	if err != nil {
-		return nil, err
+	query := "UPDATE [" + table + "] SET "
+	args := make([]any, len(cols))
+
+	colI := 0
+	for col, val := range cols {
+
+		if dao.Schema.Tables[table][col] == "" {
+			return nil, InvalidColErr(col, table)
+		}
+
+		if colI == len(cols)-1 {
+			query += fmt.Sprintf("[%s] = ? ", col)
+		} else {
+			query += fmt.Sprintf("[%s] = ?, ", col)
+		}
+		args[colI] = val
+		colI++
 	}
 
-	where, whereArgs, err := buildWhere(table, dao.Schema.Tables[table], params)
+	where, whereArgs, err := dao.Schema.buildWhere(table, params)
 	if err != nil {
 		return nil, err
 	}
@@ -186,21 +200,12 @@ func (dao Database) UpdateRows(req *http.Request) ([]interface{}, error) {
 	args = append(args, whereArgs...)
 
 	if params["select"] != nil {
-		selQuery, err := buildReturning(params["select"][0])
+		selQuery, err := dao.Schema.buildReturning(table, params["select"][0])
 		if err != nil {
 			return nil, err
 		}
 
 		query += selQuery
-
-		if params["order"] != nil {
-			order, err := buildOrder(params["order"][0])
-			if err != nil {
-				return nil, err
-			}
-
-			query += order
-		}
 
 		return dao.QueryMap(query, args...)
 	}
@@ -208,21 +213,6 @@ func (dao Database) UpdateRows(req *http.Request) ([]interface{}, error) {
 	_, err = dao.client.Exec(query, args...)
 
 	return nil, err
-}
-
-func buildUpdate(cols map[string]any, table string) (string, []any, error) {
-
-	query := "UPDATE [" + table + "] SET "
-	args := make([]any, len(cols))
-
-	colI := 0
-	for col, val := range cols {
-		query += col + " = ?, "
-		args[colI] = val
-		colI++
-	}
-
-	return query[:len(query)-2] + " ", nil, nil
 }
 
 func buildUpsert(colSlice []map[string]any, table string, pk string) (string, []any, error) {
@@ -292,54 +282,13 @@ func buildInsert(cols map[string]any, table string) (string, []any, error) {
 
 }
 
-func buildSelect(param string, table string, schema SchemaCache) (string, error) {
+// TODO check against schema Cache to prevent vulnerabilities
+func (schema SchemaCache) buildSelect(param string, table string) (string, error) {
 
-	cols, rels, err := parseSelect(param, table)
-	if err != nil {
-		return "", err
-	}
+	rels := make(map[string]string)
 
-	query := "SELECT "
-
-	for _, col := range cols {
-		query += col + ", "
-	}
-
-	query = query[:len(query)-2] + " FROM " + table + " "
-
-	if len(rels) == 0 {
-		return query, nil
-	}
-
-	for tbl, ref := range rels {
-
-		var fk Fk
-
-		for _, val := range schema.Fks {
-			if val.Table == tbl && val.References == ref {
-				fk = val
-				break
-			}
-		}
-
-		if fk == (Fk{}) {
-			return "", fmt.Errorf("no relationship exists between %s and %s. This may be because of a stale schema cache. use POST /api/schema/invalidate to refresh the cache", tbl, ref)
-		}
-
-		query += fmt.Sprintf("LEFT JOIN %s on %s.%s = %s.%s ", fk.Table, fk.References, fk.To, fk.Table, fk.From)
-	}
-
-	return query, nil
-}
-
-func parseSelect(str string, table string) ([]string, map[string]string, error) {
-
-	fkMap := make(map[string]string)
-
-	if str == "" {
-		cols := make([]string, 1)
-		cols[0] = "*"
-		return cols, nil, nil
+	if param == "" || param == "*" {
+		return "SELECT * FROM " + table, nil
 	}
 
 	var cols []string
@@ -351,7 +300,7 @@ func parseSelect(str string, table string) ([]string, map[string]string, error) 
 	alias := ""
 	_ = alias
 
-	for _, v := range str {
+	for _, v := range param {
 		if escaped {
 			currStr += string(v)
 			escaped = false
@@ -374,7 +323,7 @@ func parseSelect(str string, table string) ([]string, map[string]string, error) 
 			currTable = currStr
 			currStr = ""
 			alias = ""
-			fkMap[currTable] = prevTable
+			rels[currTable] = prevTable
 		case ')':
 			if currStr != "" {
 				fullCol := dotSeparate(currTable, currStr)
@@ -417,73 +366,91 @@ func parseSelect(str string, table string) ([]string, map[string]string, error) 
 		}
 	}
 
-	return cols, fkMap, nil
+	query := "SELECT "
+
+	for _, col := range cols {
+		query += col + ", "
+	}
+
+	query = query[:len(query)-2] + " FROM " + table + " "
+
+	if len(rels) == 0 {
+		return query, nil
+	}
+
+	for tbl, ref := range rels {
+
+		var fk Fk
+
+		for _, val := range schema.Fks {
+			if val.Table == tbl && val.References == ref {
+				fk = val
+				break
+			}
+		}
+
+		if fk == (Fk{}) {
+			return "", fmt.Errorf("no relationship exists between %s and %s. This may be because of a stale schema cache. use POST /api/schema/invalidate to refresh the cache", tbl, ref)
+		}
+
+		query += fmt.Sprintf("LEFT JOIN %s on %s.%s = %s.%s ", fk.Table, fk.References, fk.To, fk.Table, fk.From)
+	}
+
+	return query, nil
 }
 
-func buildOrder(param string) (string, error) {
+func (schema SchemaCache) buildOrder(table, param string) (string, error) {
 	if param == "" {
 		return "", nil
 	}
 
 	query := "ORDER BY "
 
-	orderBy := splitAtomic(param, ',')
+	orderBy := splitParenthesis(param)
 
 	for i, col := range orderBy {
-		keys := splitAtomic(col, '.')
-
-		if len(keys) > 1 {
-
-			if keys[1] == "desc" {
-				keys[1] = "DESC"
-			} else if keys[1] == "asc" {
-				keys[1] = "ASC"
+		for _, op := range col {
+			if op == "desc" {
+				query += "DESC "
+			} else if op == "asc" {
+				query += "ASC "
+			} else if schema.Tables[table][op] != "" {
+				query += fmt.Sprintf("[%s] ", op)
 			} else {
-				return "", errors.New("unknown sorting for order by")
+				return "", InvalidColErr(op, table)
 			}
 		}
 
-		if i != len(orderBy)-1 {
-
-			if len(keys) == 2 {
-				query += fmt.Sprintf("%s %s, ", keys[0], keys[1])
-			} else {
-				query += keys[0] + ", "
-			}
-
-		} else {
-
-			if len(keys) == 2 {
-				query += fmt.Sprintf("%s %s ", keys[0], keys[1])
-			} else {
-				query += keys[0] + " "
-			}
-
+		if i < len(col)-1 {
+			query += ", "
 		}
-
 	}
 
 	return query, nil
 }
 
-func buildReturning(param string) (string, error) {
+func (schema SchemaCache) buildReturning(table, param string) (string, error) {
 
 	query := "RETURNING "
 
 	keys := splitAtomic(param, ',')
 
 	for i, key := range keys {
+		if schema.Tables[table][key] == "" {
+			return "", InvalidColErr(param, table)
+		}
+
 		if i == len(keys)-1 {
-			query += key + " "
+			query += fmt.Sprintf("[%s] ", key)
 		} else {
-			query += key + ", "
+			query += fmt.Sprintf("[%s], ", key)
 		}
 	}
 
 	return query, nil
 }
 
-func buildWhere(table string, schemaCols map[string]string, params url.Values) (string, []any, error) {
+func (schema SchemaCache) buildWhere(table string, params url.Values) (string, []any, error) {
 
 	var args []any
 	query := "Where "
@@ -499,13 +466,17 @@ func buildWhere(table string, schemaCols map[string]string, params url.Values) (
 						query += "OR "
 					}
 
-					query += "[" + ops[0] + "]" + " "
+					if schema.Tables[table][ops[0]] == "" {
+						return "", nil, InvalidColErr(ops[0], table)
+					}
+
+					query += fmt.Sprintf("[%s] ", ops[0])
 					for i = 1; i < len(ops); i++ {
-						if mapOperator(ops[i]) != "" {
-							query += mapOperator(ops[i]) + " "
-						} else {
+						if mapOperator(ops[i]) == "" {
 							query += "? "
 							args = append(args, ops[i])
+						} else {
+							query += mapOperator(ops[i]) + " "
 						}
 					}
 					i++
@@ -518,8 +489,8 @@ func buildWhere(table string, schemaCols map[string]string, params url.Values) (
 
 		if name != "order" && name != "select" {
 			normalizedParam := unQuoteParam(name)
-			if schemaCols[normalizedParam] == "" {
-				return "", nil, invalidColErr(name, table)
+			if schema.Tables[table][normalizedParam] == "" {
+				return "", nil, InvalidColErr(name, table)
 			}
 
 			hasWhere = true
@@ -528,7 +499,7 @@ func buildWhere(table string, schemaCols map[string]string, params url.Values) (
 				query += "AND "
 			}
 
-			query += "[" + normalizedParam + "]" + " "
+			query += fmt.Sprintf("[%s] ", normalizedParam)
 
 			keys := splitAtomic(val[0], '.')
 

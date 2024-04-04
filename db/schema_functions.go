@@ -75,7 +75,7 @@ func (dao Database) DropColumns(req *http.Request) error {
 	column := req.PathValue("column")
 
 	if dao.Schema.Tables[name][column] == "" {
-		return invalidColErr(column, name)
+		return InvalidColErr(column, name)
 	}
 
 	_, err := dao.client.Exec("ALTER TABLE [%s] DROP COLUMN [%s]", name, column)

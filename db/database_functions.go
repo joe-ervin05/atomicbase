@@ -16,6 +16,10 @@ func (dao Database) RegisterDb(req *http.Request) error {
 	return nil
 }
 
+func (dao Database) ListDbs(req *http.Request) ([]interface{}, error) {
+	return dao.QueryMap("SELECT name, id from databases")
+}
+
 // for use with the primary database
 func (dao Database) CreateDb(req *http.Request) error {
 
