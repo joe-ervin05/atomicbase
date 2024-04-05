@@ -8,24 +8,25 @@ import (
 
 func Run(app *http.ServeMux) {
 
-	app.HandleFunc("GET /api/{table}", handleGetRows())
-	app.HandleFunc("POST /api/{table}", handlePostRows())     // done
-	app.HandleFunc("PATCH /api/{table}", handlePatchRows())   // done
-	app.HandleFunc("DELETE /api/{table}", handleDeleteRows()) // done
+	app.HandleFunc("GET /query/{table}", handleGetRows())
+	app.HandleFunc("POST /query/{table}", handlePostRows())     // done
+	app.HandleFunc("PATCH /query/{table}", handlePatchRows())   // done
+	app.HandleFunc("DELETE /query/{table}", handleDeleteRows()) // done
 
-	app.HandleFunc("POST /api/schema/invalidate", handleInvalidateSchema()) // done
-	app.HandleFunc("POST /api/schema/edit", handleEditSchema())             // done
+	app.HandleFunc("POST /schema", handleEditSchema())                  // done
+	app.HandleFunc("POST /schema/invalidate", handleInvalidateSchema()) // done
 
-	app.HandleFunc("POST /api/schema/table/{name}", handleCreateTable())
-	app.HandleFunc("DELETE /api/schema/table/{name}", handleDropTable())
-	app.HandleFunc("PATCH /api/schema/table/{name}", handleAlterTable())
+	app.HandleFunc("POST /schema/table/{name}", handleCreateTable()) // done
+	app.HandleFunc("DELETE /schema/table/{name}", handleDropTable()) // done
+	app.HandleFunc("PATCH /schema/table/{name}", handleAlterTable())
 
-	app.HandleFunc("POST /api/db/{name}", handleCreateDb())    // done
-	app.HandleFunc("PATCH /api/db/{name}", handleRegisterDb()) // done
-	app.HandleFunc("GET /api/db/list", handleListDbs())        // done
-	app.HandleFunc("DELETE /api/db/{name}", handleDeleteDb())  // done
+	app.HandleFunc("GET /db", handleListDbs())             // done
+	app.HandleFunc("POST /db/{name}", handleCreateDb())    // done
+	app.HandleFunc("PATCH /db/{name}", handleRegisterDb()) // done
+	app.HandleFunc("PATCH /db", handleRegisterAll())       //
+	app.HandleFunc("DELETE /db/{name}", handleDeleteDb())  // done
 
-	app.HandleFunc("/api/udf/{funcName}", handlePostUdf())
+	app.HandleFunc("/udf/{funcName}", handlePostUdf())
 }
 
 func handleGetRows() http.HandlerFunc {
@@ -60,6 +61,15 @@ func handleCreateDb() http.HandlerFunc {
 	})
 }
 
+func handleRegisterAll() http.HandlerFunc {
+	return db.WithPrimary(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+
+		err := dao.RegisterAllDbs()
+		return nil, err
+
+	})
+}
+
 func handleRegisterDb() http.HandlerFunc {
 	return db.WithPrimary(func(dao db.Database, req *http.Request) ([]interface{}, error) {
 
@@ -70,7 +80,7 @@ func handleRegisterDb() http.HandlerFunc {
 
 func handleListDbs() http.HandlerFunc {
 	return db.WithPrimary(func(dao db.Database, req *http.Request) ([]interface{}, error) {
-		return dao.ListDbs(req)
+		return dao.ListDbs()
 	})
 }
 

@@ -13,7 +13,15 @@ import (
 )
 
 // gets all turso dbs within an organization and stores them
-func (dao Database) RegisterAllDbs(req *http.Request) error {
+func (dao Database) RegisterAllDbs() error {
+	type dbName struct {
+		Name string
+	}
+
+	type databases struct {
+		Databases []dbName `json:"databases"`
+	}
+
 	org := os.Getenv("TURSO_ORGANIZATION")
 	if org == "" {
 		return errors.New("TURSO_ORGANIZATION is not set but is required for managing turso databases")
@@ -21,6 +29,96 @@ func (dao Database) RegisterAllDbs(req *http.Request) error {
 	token := os.Getenv("TURSO_API_KEY")
 	if token == "" {
 		return errors.New("TURSO_API_KEY is not set but is required for managing turso databases")
+	}
+
+	var client http.Client
+
+	req, err := http.NewRequest("GET", fmt.Sprintf("https://api.turso.tech/v1/organizations/%s/databases", org), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	if res.StatusCode != 200 {
+		return errors.New(res.Status)
+	}
+
+	dec := json.NewDecoder(res.Body)
+
+	var dbs databases
+
+	err = dec.Decode(&dbs)
+	if err != nil {
+		return err
+	}
+
+	rows, err := dao.client.Query("SELECT name FROM databases")
+	if err != nil {
+		return err
+	}
+
+	var currDbs []string
+
+	for rows.Next() {
+		var name sql.NullString
+
+		rows.Scan(&name)
+		currDbs = append(currDbs, name.String)
+	}
+
+	for _, db := range dbs.Databases {
+		exists := false
+		for i := 0; i < len(currDbs) && !exists; i++ {
+			if db.Name == currDbs[i] {
+				exists = true
+			}
+		}
+
+		if !exists {
+			dbToken, err := createDbToken(db.Name)
+			if err != nil {
+				return err
+			}
+
+			newClient, err := sql.Open("libsql", fmt.Sprintf("libsql://%s-%s.turso.io?authToken=%s", db.Name, org, dbToken))
+			if err != nil {
+				return err
+			}
+			defer newClient.Close()
+
+			err = newClient.Ping()
+
+			if err != nil {
+				return err
+			}
+
+			cols, pks, err := schemaCols(newClient)
+			if err != nil {
+				return err
+			}
+			fks, err := schemaFks(newClient)
+			if err != nil {
+				return err
+			}
+
+			var buf bytes.Buffer
+			schema := SchemaCache{cols, pks, fks}
+			enc := gob.NewEncoder(&buf)
+
+			err = enc.Encode(schema)
+			if err != nil {
+				return err
+			}
+
+			_, err = dao.client.Exec("INSERT INTO databases (name, token, schema) values (?, ?, ?)", db.Name, dbToken, buf.Bytes())
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
@@ -35,7 +133,6 @@ func (dao Database) RegisterDb(req *http.Request) error {
 	if dbToken == "" {
 		dbToken, err = createDbToken(name)
 		if err != nil {
-			fmt.Println("token error")
 			return err
 		}
 	}
@@ -52,7 +149,6 @@ func (dao Database) RegisterDb(req *http.Request) error {
 	client := &http.Client{}
 	request, err := http.NewRequest("GET", fmt.Sprintf("https://api.turso.tech/v1/organizations/%s/databases/%s", org, name), nil)
 	if err != nil {
-		fmt.Println("retrieve error")
 		return err
 	}
 
@@ -63,7 +159,6 @@ func (dao Database) RegisterDb(req *http.Request) error {
 		return err
 	}
 	if res.StatusCode != 200 {
-		fmt.Println("retrieve error 2")
 		return errors.New(res.Status)
 	}
 
@@ -71,6 +166,7 @@ func (dao Database) RegisterDb(req *http.Request) error {
 	if err != nil {
 		return err
 	}
+	defer newClient.Close()
 
 	err = newClient.Ping()
 
@@ -101,23 +197,22 @@ func (dao Database) RegisterDb(req *http.Request) error {
 	return err
 }
 
-func (dao Database) ListDbs(req *http.Request) ([]interface{}, error) {
+func (dao Database) ListDbs() ([]interface{}, error) {
 	return dao.QueryMap("SELECT name, id from databases")
 }
 
 // for use with the primary database
 func (dao Database) CreateDb(req *http.Request) error {
+	type body struct {
+		Name  string `json:"name"`
+		Group string `json:"group"`
+	}
 
 	group := req.URL.Query().Get("group")
 	name := req.PathValue("name")
 
 	if group == "" {
 		group = "default"
-	}
-
-	type body struct {
-		Name  string `json:"name"`
-		Group string `json:"group"`
 	}
 
 	bod := body{name, group}
@@ -153,17 +248,16 @@ func (dao Database) CreateDb(req *http.Request) error {
 		return errors.New(res.Status)
 	}
 
-	newToken, err := createDbToken(name)
-
-	if err != nil {
-		return err
-	}
-
 	buf.Reset()
 	var schema SchemaCache
 	enc := gob.NewEncoder(&buf)
 
 	err = enc.Encode(schema)
+	if err != nil {
+		return err
+	}
+
+	newToken, err := createDbToken(name)
 	if err != nil {
 		return err
 	}
@@ -216,6 +310,10 @@ func (dao Database) DeleteDb(req *http.Request) error {
 }
 
 func createDbToken(dbName string) (string, error) {
+	type jwtBody struct {
+		Jwt string `json:"jwt"`
+	}
+
 	org := os.Getenv("TURSO_ORGANIZATION")
 	if org == "" {
 		return "", errors.New("TURSO_ORGANIZATION is not set but is required for managing turso databases")
@@ -242,10 +340,6 @@ func createDbToken(dbName string) (string, error) {
 
 	dec := json.NewDecoder(res.Body)
 	dec.DisallowUnknownFields()
-
-	type jwtBody struct {
-		Jwt string `json:"jwt"`
-	}
 
 	var jwtBod jwtBody
 	err = dec.Decode(&jwtBod)
