@@ -16,14 +16,14 @@ func Run(app *http.ServeMux) {
 	app.HandleFunc("POST /schema", handleEditSchema())                  // done
 	app.HandleFunc("POST /schema/invalidate", handleInvalidateSchema()) // done
 
-	app.HandleFunc("POST /schema/table/{name}", handleCreateTable()) // done
-	app.HandleFunc("DELETE /schema/table/{name}", handleDropTable()) // done
-	app.HandleFunc("PATCH /schema/table/{name}", handleAlterTable())
+	app.HandleFunc("POST /schema/table/{tableName}", handleCreateTable()) // done
+	app.HandleFunc("DELETE /schema/table/{tableName}", handleDropTable()) // done
+	app.HandleFunc("PATCH /schema/table/{tableName}", handleAlterTable())
 
 	app.HandleFunc("GET /db", handleListDbs())             // done
 	app.HandleFunc("POST /db/{name}", handleCreateDb())    // done
 	app.HandleFunc("PATCH /db/{name}", handleRegisterDb()) // done
-	app.HandleFunc("PATCH /db", handleRegisterAll())       //
+	app.HandleFunc("PATCH /db", handleRegisterAll())       // done
 	app.HandleFunc("DELETE /db/{name}", handleDeleteDb())  // done
 
 	app.HandleFunc("/udf/{funcName}", handlePostUdf())
@@ -122,7 +122,7 @@ func handleDropTable() http.HandlerFunc {
 
 func handleAlterTable() http.HandlerFunc {
 	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
-		err := dao.RenameTable(req)
+		err := dao.AlterTable(req)
 		return nil, err
 	})
 }
