@@ -197,8 +197,18 @@ func (dao Database) RegisterDb(req *http.Request) error {
 	return err
 }
 
-func (dao Database) ListDbs() ([]interface{}, error) {
-	return dao.QueryMap("SELECT name, id from databases")
+func (dao Database) ListDbs() ([]byte, error) {
+	row := dao.client.QueryRow("SELECT json_group_array(json_object('name', name, 'id', id)) AS data FROM (SELECT name, id from databases ORDER BY id)")
+
+	if row.Err() != nil {
+		return nil, row.Err()
+	}
+
+	var res []byte
+
+	err := row.Scan(&res)
+
+	return res, err
 }
 
 // for use with the primary database

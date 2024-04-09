@@ -30,31 +30,31 @@ func Run(app *http.ServeMux) {
 }
 
 func handleGetRows() http.HandlerFunc {
-	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]byte, error) {
 		return dao.SelectRows(req)
 	})
 }
 
 func handlePostRows() http.HandlerFunc {
-	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]byte, error) {
 		return dao.InsertRows(req)
 	})
 }
 
 func handlePatchRows() http.HandlerFunc {
-	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]byte, error) {
 		return dao.UpdateRows(req)
 	})
 }
 
 func handleDeleteRows() http.HandlerFunc {
-	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]byte, error) {
 		return dao.DeleteRows(req)
 	})
 }
 
 func handleCreateDb() http.HandlerFunc {
-	return db.WithPrimary(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithPrimary(func(dao db.Database, req *http.Request) ([]byte, error) {
 
 		err := dao.CreateDb(req)
 		return nil, err
@@ -62,7 +62,7 @@ func handleCreateDb() http.HandlerFunc {
 }
 
 func handleRegisterAll() http.HandlerFunc {
-	return db.WithPrimary(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithPrimary(func(dao db.Database, req *http.Request) ([]byte, error) {
 
 		err := dao.RegisterAllDbs()
 		return nil, err
@@ -71,7 +71,7 @@ func handleRegisterAll() http.HandlerFunc {
 }
 
 func handleRegisterDb() http.HandlerFunc {
-	return db.WithPrimary(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithPrimary(func(dao db.Database, req *http.Request) ([]byte, error) {
 
 		err := dao.RegisterDb(req)
 		return nil, err
@@ -79,13 +79,13 @@ func handleRegisterDb() http.HandlerFunc {
 }
 
 func handleListDbs() http.HandlerFunc {
-	return db.WithPrimary(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithPrimary(func(dao db.Database, req *http.Request) ([]byte, error) {
 		return dao.ListDbs()
 	})
 }
 
 func handleDeleteDb() http.HandlerFunc {
-	return db.WithPrimary(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithPrimary(func(dao db.Database, req *http.Request) ([]byte, error) {
 
 		err := dao.DeleteDb(req)
 		return nil, err
@@ -93,42 +93,42 @@ func handleDeleteDb() http.HandlerFunc {
 }
 
 func handleInvalidateSchema() http.HandlerFunc {
-	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]byte, error) {
 		err := dao.InvalidateSchema()
 		return nil, err
 	})
 }
 
 func handleEditSchema() http.HandlerFunc {
-	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]byte, error) {
 		err := dao.EditSchema(req)
 		return nil, err
 	})
 }
 
 func handleCreateTable() http.HandlerFunc {
-	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]byte, error) {
 		err := dao.CreateTable(req)
 		return nil, err
 	})
 }
 
 func handleDropTable() http.HandlerFunc {
-	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]byte, error) {
 		err := dao.DropTable(req)
 		return nil, err
 	})
 }
 
 func handleAlterTable() http.HandlerFunc {
-	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]byte, error) {
 		err := dao.AlterTable(req)
 		return nil, err
 	})
 }
 
 func handlePostUdf() http.HandlerFunc {
-	return db.WithDb(func(dao db.Database, req *http.Request) ([]interface{}, error) {
+	return db.WithDb(func(dao db.Database, req *http.Request) ([]byte, error) {
 		return nil, nil
 	})
 }

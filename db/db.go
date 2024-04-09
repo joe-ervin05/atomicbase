@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"log"
 	"os"
@@ -154,4 +155,16 @@ func (dao Database) QueryMap(query string, args ...any) ([]interface{}, error) {
 	}
 
 	return finalRows, nil
+}
+
+func (dao Database) QueryJSON(query string, args ...any) ([]byte, error) {
+	type queryData struct {
+		Data []interface{} `json:"data"`
+	}
+	m, err := dao.QueryMap(query, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(&(queryData{m}))
 }

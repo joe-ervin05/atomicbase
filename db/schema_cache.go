@@ -106,34 +106,6 @@ func schemaCols(db *sql.DB) (TblMap, map[string]string, error) {
 
 }
 
-// func schemaPks(db *sql.DB) (map[string]string, error) {
-
-// 	pkMap := make(map[string]string)
-
-// 	rows, err := db.Query(`
-// 		SELECT m.name, l.name as pk
-// 		FROM sqlite_master m
-// 		JOIN pragma_table_info(m.name) l ON l.pk = 1
-// 		WHERE m.type = 'table'
-// 		ORDER BY m.name;
-// 	`)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer rows.Close()
-
-// 	for rows.Next() {
-// 		var pk sql.NullString
-// 		var name sql.NullString
-
-// 		rows.Scan(&name, &pk)
-// 		pkMap[name.String] = pk.String
-// 	}
-
-// 	return pkMap, rows.Err()
-
-// }
-
 func (dao Database) saveSchema() error {
 	if dao.id == 0 {
 		// prevent concurrent writes

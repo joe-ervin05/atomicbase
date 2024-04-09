@@ -2,7 +2,6 @@ package db
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -10,11 +9,11 @@ import (
 	"os"
 )
 
-type DbHandler func(db Database, req *http.Request) ([]interface{}, error)
+type DbHandler func(db Database, req *http.Request) ([]byte, error)
 
 type Response struct {
-	Data  []interface{} `json:"data"`
-	Error interface{}   `json:"error"`
+	Data  []byte      `json:"data"`
+	Error interface{} `json:"error"`
 }
 
 // for endpoints that only work with the primary database
@@ -34,15 +33,7 @@ func WithPrimary(handler DbHandler) http.HandlerFunc {
 			return
 		}
 
-		resp := Response{data, nil}
-
-		body, err := json.Marshal(&resp)
-		if err != nil {
-			respErr(wr, err)
-			return
-		}
-
-		wr.Write(body)
+		wr.Write(data)
 		defer dao.client.Close()
 		defer req.Body.Close()
 
@@ -66,15 +57,7 @@ func WithDb(handler DbHandler) http.HandlerFunc {
 			return
 		}
 
-		resp := Response{data, nil}
-
-		body, err := json.Marshal(&resp)
-		if err != nil {
-			respErr(wr, err)
-			return
-		}
-
-		wr.Write(body)
+		wr.Write(data)
 		defer dao.client.Close()
 		defer req.Body.Close()
 
@@ -82,10 +65,8 @@ func WithDb(handler DbHandler) http.HandlerFunc {
 }
 
 func respErr(wr http.ResponseWriter, err error) {
-	resp := Response{nil, err.Error()}
-	body, _ := json.Marshal(&resp)
 	wr.WriteHeader(http.StatusInternalServerError)
-	wr.Write(body)
+	wr.Write([]byte(err.Error()))
 }
 
 func connDb(req *http.Request) (Database, error) {
