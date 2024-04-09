@@ -291,7 +291,8 @@ func (schema SchemaCache) buildSelect(param string, table string) (string, error
 		return "SELECT * FROM " + table, nil
 	}
 
-	var cols []string
+	query := "SELECT "
+
 	quoted := false
 	currTable := table
 	var prevTable string
@@ -301,78 +302,79 @@ func (schema SchemaCache) buildSelect(param string, table string) (string, error
 	_ = alias
 
 	for _, v := range param {
+		fmt.Println(string(v))
 		if escaped {
 			currStr += string(v)
 			escaped = false
 			continue
-		}
-		if v == '\\' {
+		} else if v == '\\' {
 			escaped = true
 			continue
-		}
-		if quoted && v != '"' {
+		} else if quoted && v != '"' {
 			currStr += string(v)
 			continue
-		}
+		} else {
+			switch v {
+			case '"':
+				quoted = !quoted
+			case '(':
+				if schema.Tables[currStr] == nil {
+					return "", InvalidTblErr(currStr)
+				}
 
-		switch v {
-		case '"':
-			quoted = !quoted
-		case '(':
-			prevTable = currTable
-			currTable = currStr
-			currStr = ""
-			alias = ""
-			rels[currTable] = prevTable
-		case ')':
-			if currStr != "" {
-				fullCol := dotSeparate(currTable, currStr)
-				if alias != "" {
-					fullCol += " AS " + alias + " "
-				}
-				cols = append(cols, fullCol)
+				prevTable = currTable
+				currTable = currStr
 				currStr = ""
-			}
-			alias = ""
-			currTable = prevTable
-		case ':':
-			alias = currStr
-			currStr = ""
-		case ',':
-			if currTable == table {
-				if alias != "" {
-					currStr += " AS " + alias
+				alias = ""
+				rels[currTable] = prevTable
+			case ')':
+				if currStr != "" {
+					if schema.Tables[currTable][currStr] == "" {
+						return "", InvalidColErr(currStr, currTable)
+					}
+					query += dotSeparate(currTable, currStr)
+					if alias != "" {
+						query += " AS " + alias
+					}
+					query += ", "
+					currStr = ""
 				}
-				cols = append(cols, currStr)
-			} else {
-				fullCol := dotSeparate(currTable, currStr)
-				if alias != "" {
-					fullCol += " AS " + alias
+				alias = ""
+				currTable = prevTable
+			case ':':
+				alias = currStr
+				currStr = ""
+			case ',':
+				if currStr != "" {
+					if schema.Tables[currTable][currStr] == "" {
+						return "", InvalidColErr(currStr, currTable)
+					}
+					query += dotSeparate(currTable, currStr)
+					if alias != "" {
+						query += " AS " + alias
+					}
+					query += ", "
+					alias = ""
+					currStr = ""
 				}
-				cols = append(cols, fullCol)
+			default:
+				currStr += string(v)
 			}
-			alias = ""
-			currStr = ""
-		default:
-			currStr += string(v)
 		}
 	}
 
 	if currStr != "" {
-		if currTable == table {
-			cols = append(cols, currStr)
-		} else {
-			cols = append(cols, dotSeparate(currTable, currStr))
+		if schema.Tables[currTable][currStr] == "" {
+			return "", InvalidColErr(currStr, currTable)
 		}
+		query += dotSeparate(currTable, currStr)
+		if alias != "" {
+			query += " AS " + alias
+		}
+		query += ", "
 	}
 
-	query := "SELECT "
-
-	for _, col := range cols {
-		query += col + ", "
-	}
-
-	query = query[:len(query)-2] + " FROM " + table + " "
+	query = query[:len(query)-2] + fmt.Sprintf(" FROM [%s] ", table)
 
 	if len(rels) == 0 {
 		return query, nil
@@ -393,7 +395,7 @@ func (schema SchemaCache) buildSelect(param string, table string) (string, error
 			return "", fmt.Errorf("no relationship exists between %s and %s. This may be because of a stale schema cache. use POST /api/schema/invalidate to refresh the cache", tbl, ref)
 		}
 
-		query += fmt.Sprintf("LEFT JOIN %s on %s.%s = %s.%s ", fk.Table, fk.References, fk.To, fk.Table, fk.From)
+		query += fmt.Sprintf("LEFT JOIN [%s] on [%s].[%s] = [%s].[%s] ", fk.Table, fk.References, fk.To, fk.Table, fk.From)
 	}
 
 	return query, nil
@@ -430,6 +432,9 @@ func (schema SchemaCache) buildOrder(table, param string) (string, error) {
 }
 
 func (schema SchemaCache) buildReturning(table, param string) (string, error) {
+	if param == "*" {
+		return "RETURNING *", nil
+	}
 
 	query := "RETURNING "
 
@@ -641,11 +646,11 @@ func mapOperator(str string) string {
 
 func dotSeparate(x, y string) string {
 	if x == "" {
-		return y
+		return fmt.Sprintf("[%s]", y)
 	}
 	if y == "" {
-		return x
+		return fmt.Sprintf("[%s]", x)
 	}
 
-	return x + "." + y
+	return fmt.Sprintf("[%s].[%s]", x, y)
 }

@@ -18,7 +18,7 @@ func Run(app *http.ServeMux) {
 
 	app.HandleFunc("POST /schema/table/{tableName}", handleCreateTable()) // done
 	app.HandleFunc("DELETE /schema/table/{tableName}", handleDropTable()) // done
-	app.HandleFunc("PATCH /schema/table/{tableName}", handleAlterTable())
+	app.HandleFunc("PATCH /schema/table/{tableName}", handleAlterTable()) // done
 
 	app.HandleFunc("GET /db", handleListDbs())             // done
 	app.HandleFunc("POST /db/{name}", handleCreateDb())    // done

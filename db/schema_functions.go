@@ -57,16 +57,12 @@ func (dao Database) AlterTable(req *http.Request) error {
 		return InvalidTblErr(table)
 	}
 
-	query := "ALTER TABLE [" + table + "] "
+	query := ""
 
 	var changes tblChanges
 	err := json.NewDecoder(req.Body).Decode(&changes)
 	if err != nil {
 		return err
-	}
-
-	if changes.NewName != "" {
-		query += "RENAME TO [" + changes.NewName + "] "
 	}
 
 	if changes.RenameColumns != nil {
@@ -75,7 +71,7 @@ func (dao Database) AlterTable(req *http.Request) error {
 				return InvalidColErr(col, table)
 			}
 
-			query += fmt.Sprintf("RENAME COLUMN [%s] TO [%s] ", col, new)
+			query += fmt.Sprintf("ALTER TABLE ["+table+"] RENAME COLUMN [%s] TO [%s]; ", col, new)
 		}
 	}
 
@@ -85,17 +81,28 @@ func (dao Database) AlterTable(req *http.Request) error {
 				return InvalidColErr(col, table)
 			}
 
-			query += fmt.Sprintf("DROP COLUMN [%s] ", col)
+			query += fmt.Sprintf("ALTER TABLE ["+table+"] DROP COLUMN [%s]; ", col)
 		}
 	}
 
 	if changes.NewColumns != nil {
 		for name, col := range changes.NewColumns {
+			if mapColType(col.Type) == "" {
+				return InvalidTypeErr(name, col.Type)
+			}
 
-			query += fmt.Sprintf("ADD COLUMN [%s] %s ", name, col.Type)
+			query += fmt.Sprintf("ALTER TABLE ["+table+"] ADD COLUMN [%s] %s ", name, mapColType(col.Type))
 
 			if col.NotNull {
 				query += "NOT NULL "
+			}
+			if col.Default != nil {
+				switch col.Default.(type) {
+				case string:
+					query += fmt.Sprintf(`DEFAULT "%s" `, col.Default)
+				case float64:
+					query += fmt.Sprintf("DEFAULT %g ", col.Default)
+				}
 			}
 
 			if col.References != "" {
@@ -126,10 +133,23 @@ func (dao Database) AlterTable(req *http.Request) error {
 					query += "ON UPDATE " + mapOnAction(col.OnUpdate) + " "
 				}
 			}
+
+			query += "; "
 		}
 	}
 
-	return nil
+	if changes.NewName != "" {
+		query += "ALTER TABLE [" + table + "] RENAME TO [" + changes.NewName + "]; "
+	}
+
+	fmt.Println(query)
+
+	_, err = dao.client.Exec(query)
+	if err != nil {
+		return err
+	}
+
+	return dao.InvalidateSchema()
 }
 
 func (dao Database) CreateTable(req *http.Request) error {
@@ -165,6 +185,14 @@ func (dao Database) CreateTable(req *http.Request) error {
 		}
 		if col.NotNull {
 			query += "NOT NULL "
+		}
+		if col.Default != nil {
+			switch col.Default.(type) {
+			case string:
+				query += fmt.Sprintf(`DEFAULT "%s" `, col.Default)
+			case float64:
+				query += fmt.Sprintf("DEFAULT %g ", col.Default)
+			}
 		}
 		if col.References != "" {
 			quoted := false
@@ -205,8 +233,11 @@ func (dao Database) CreateTable(req *http.Request) error {
 	query = query[:len(query)-2] + ")"
 
 	_, err = dao.client.Exec(query)
+	if err != nil {
+		return err
+	}
 
-	return err
+	return dao.InvalidateSchema()
 }
 
 func (dao Database) DropTable(req *http.Request) error {
