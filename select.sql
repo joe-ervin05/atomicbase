@@ -1,3 +1,6 @@
+-- An example of a select query with multiple joins that returns a nested json structure.
+-- This is exactly what the api would generate when GET /query/users?select=name,id,cars(make,tires(id)),motorcycles(id,name) is requested
+
 SELECT json_group_array(json_object('name', [name], 'userId', [userId], 'cars', [cars], 'motorcycles', [motorcycles])) 
 AS data 
 FROM (
@@ -18,3 +21,4 @@ FROM (
     ) AS [motorcycles] on [users].[id] = [cars].[user_id]
     GROUP BY [users].[id]
 );
+
