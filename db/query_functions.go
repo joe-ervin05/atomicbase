@@ -326,6 +326,15 @@ func (schema SchemaCache) buildOuterAgg(table Table) (string, string, error) {
 	joins := ""
 
 	for _, col := range table.columns {
+		if col.name == "*" {
+			sel += "*, "
+			for name := range schema.Tables[table.name] {
+				agg += fmt.Sprintf("'%s', [%s], ", name, name)
+			}
+
+			continue
+		}
+
 		sel += fmt.Sprintf("[%s].[%s], ", table.name, col.name)
 		if col.alias != "" {
 			agg += fmt.Sprintf("'%s', [%s], ", col.alias, col.name)
@@ -375,6 +384,15 @@ func (schema SchemaCache) buildSelCurr(table Table, joinedOn string) (string, st
 	for _, col := range table.columns {
 		if joinedOn != "" && fk.Table == table.name && fk.From == col.name {
 			includesFk = true
+		}
+
+		if col.name == "*" {
+			sel += "*, "
+			for name := range schema.Tables[table.name] {
+				agg += fmt.Sprintf("'%s', [%s].[%s], ", name, table.name, name)
+			}
+
+			continue
 		}
 
 		sel += fmt.Sprintf("[%s].[%s], ", table.name, col.name)
