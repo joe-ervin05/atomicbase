@@ -63,6 +63,7 @@ func (dao Database) SelectRows(req *http.Request) ([]byte, error) {
 	}
 
 	fmt.Printf("SELECT json_group_array(json_object(%s)) AS data FROM (%s)", agg, query)
+	fmt.Println(args)
 
 	row := dao.client.QueryRow(fmt.Sprintf("SELECT json_group_array(json_object(%s)) AS data FROM (%s)", agg, query), args...)
 	if row.Err() != nil {
@@ -371,8 +372,6 @@ func (schema SchemaCache) buildSelCurr(table Table, joinedOn string) (string, st
 		}
 	}
 
-	fmt.Println(fk)
-
 	for _, col := range table.columns {
 		if joinedOn != "" && fk.Table == table.name && fk.From == col.name {
 			includesFk = true
@@ -385,8 +384,6 @@ func (schema SchemaCache) buildSelCurr(table Table, joinedOn string) (string, st
 			agg += fmt.Sprintf("'%s', [%s].[%s], ", col.name, table.name, col.name)
 		}
 	}
-
-	fmt.Println(includesFk)
 
 	if !includesFk {
 		sel += fmt.Sprintf("[%s].[%s], ", fk.Table, fk.From)
@@ -493,27 +490,21 @@ func (schema SchemaCache) buildOrder(table, param string) (string, error) {
 
 	query := "ORDER BY "
 
-	orderBy := splitParenthesis(param)
+	orderBy := splitParenthesis(param, table)
 
-	for i, col := range orderBy {
-		for _, op := range col {
-			if op == "desc" {
-				query += "DESC "
-			} else if op == "asc" {
-				query += "ASC "
-			} else if schema.Tables[table][op] != "" {
-				query += fmt.Sprintf("[%s] ", op)
-			} else {
-				return "", InvalidColErr(op, table)
-			}
+	fmt.Println(orderBy)
+
+	for _, param := range orderBy {
+		query += fmt.Sprintf("[%s].[%s] ", param.table, param.column)
+
+		if len(param.ops) != 0 && (param.ops[0] == "asc" || param.ops[0] == "desc") {
+			query += param.ops[0] + " "
 		}
 
-		if i < len(col)-1 {
-			query += ", "
-		}
+		query += ", "
 	}
 
-	return query, nil
+	return query[:len(query)-2], nil
 }
 
 func (schema SchemaCache) buildReturning(table, param string) (string, error) {
@@ -547,8 +538,35 @@ func (schema SchemaCache) buildWhere(table string, params url.Values) (string, [
 	hasWhere := false
 	i := 0
 
+	if params["or"] != nil {
+
+		hasWhere = true
+
+		prms := splitParenthesis(params["or"][0][1:len(params["or"][0])-1], table)
+
+		for _, param := range prms {
+			if i != 0 {
+				query += "OR "
+			}
+
+			query += fmt.Sprintf("[%s].[%s] ", param.table, param.column)
+			for _, op := range param.ops {
+				if mapOperator(op) != "" {
+					query += mapOperator(op) + " "
+				} else {
+					query += "? "
+					args = append(args, op)
+				}
+			}
+
+			i++
+		}
+
+		delete(params, "or")
+	}
+
 	for name, val := range params {
-		if name != "order" && name != "select" {
+		if name != "order" && name != "select" && name != "or" {
 			splitParam := splitAtomic(name, '.')
 			if len(splitParam) == 1 {
 				splitParam = []string{table, splitParam[0]}
@@ -573,7 +591,6 @@ func (schema SchemaCache) buildWhere(table string, params url.Values) (string, [
 					query += mapOperator(v) + " "
 				} else {
 					query += "? "
-
 					args = append(args, v)
 				}
 			}
@@ -588,10 +605,16 @@ func (schema SchemaCache) buildWhere(table string, params url.Values) (string, [
 	return query, args, nil
 }
 
-func splitParenthesis(s string) [][]string {
+type Param struct {
+	table  string
+	column string
+	ops    []string
+}
+
+func splitParenthesis(s string, table string) []Param {
 	inQuotes := false
-	var fullList [][]string
-	var currList []string
+	var params []Param
+	param := Param{table, "", nil}
 	currStr := ""
 	escaped := false
 
@@ -604,12 +627,23 @@ func splitParenthesis(s string) [][]string {
 		} else if v == '"' {
 			inQuotes = !inQuotes
 		} else if v == ',' && !inQuotes {
-			currList = append(currList, currStr)
-			fullList = append(fullList, currList)
-			currList = nil
+			if param.column == "" {
+				param.column = currStr
+			} else {
+				param.ops = append(param.ops, currStr)
+			}
+			params = append(params, param)
+			param = Param{}
 			currStr = ""
 		} else if v == '.' && !inQuotes {
-			currList = append(currList, currStr)
+			if param.column == "" {
+				param.table = currStr
+			} else {
+				param.ops = append(param.ops, currStr)
+			}
+			currStr = ""
+		} else if v == ':' && !inQuotes {
+			param.column = currStr
 			currStr = ""
 		} else {
 			currStr += string(v)
@@ -617,30 +651,17 @@ func splitParenthesis(s string) [][]string {
 	}
 
 	if currStr != "" {
-		currList = append(currList, currStr)
-	}
-	if currList != nil {
-		fullList = append(fullList, currList)
-	}
-
-	return fullList
-}
-
-func unQuoteParam(param string) string {
-	escaped := false
-	newStr := ""
-	for _, v := range param {
-		if escaped {
-			newStr += string(v)
-			escaped = false
-		} else if v == '\\' {
-			escaped = true
-		} else if v != '"' {
-			newStr += string(v)
+		if param.column == "" {
+			param.column = currStr
+		} else {
+			param.ops = append(param.ops, currStr)
 		}
 	}
+	if param.column != "" {
+		params = append(params, param)
+	}
 
-	return newStr
+	return params
 }
 
 func splitAtomic(s string, delimiter rune) []string {
