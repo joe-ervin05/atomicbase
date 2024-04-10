@@ -8,16 +8,15 @@ import (
 	"net/url"
 )
 
-type Sel struct {
-	column string
-	alias  string
+type Table struct {
+	name    string
+	columns []column
+	joins   []*Table
+	parent  *Table
 }
 
-type SelMap map[string][]Sel
-
-type relation struct {
-	from  string
-	to    string
+type column struct {
+	name  string
 	alias string
 }
 
@@ -62,6 +61,8 @@ func (dao Database) SelectRows(req *http.Request) ([]byte, error) {
 
 		query += orderBy
 	}
+
+	fmt.Printf("SELECT json_group_array(json_object(%s)) AS data FROM (%s)", agg, query)
 
 	row := dao.client.QueryRow(fmt.Sprintf("SELECT json_group_array(json_object(%s)) AS data FROM (%s)", agg, query), args...)
 	if row.Err() != nil {
@@ -310,83 +311,115 @@ func (schema SchemaCache) buildSelect(param string, table string) (string, strin
 		return "SELECT * FROM " + table, "", nil
 	}
 
-	sels, rels, err := schema.parseSelect(param, table)
+	tbls, err := schema.parseSelect(param, table)
 	if err != nil {
 		return "", "", err
 	}
 
-	query := "SELECT "
+	return schema.buildOuterAgg(tbls)
+}
 
-	jsn, agg := schema.buildJSONSel(table, sels)
+func (schema SchemaCache) buildOuterAgg(table Table) (string, string, error) {
+	agg := ""
+	sel := ""
+	joins := ""
 
-	query += jsn + fmt.Sprintf(" FROM [%s] ", table)
+	for _, col := range table.columns {
+		sel += fmt.Sprintf("[%s].[%s], ", table.name, col.name)
+		if col.alias != "" {
+			agg += fmt.Sprintf("'%s', [%s], ", col.alias, col.name)
+		} else {
+			agg += fmt.Sprintf("'%s', [%s], ", col.name, col.name)
+		}
+	}
 
-	for _, rel := range rels {
-
+	for _, tbl := range table.joins {
+		agg += fmt.Sprintf("'%s', [%s], ", tbl.name, tbl.name)
+		query, aggs, err := schema.buildSelCurr(*tbl, table.name)
+		if err != nil {
+			return "", "", err
+		}
 		var fk Fk
-
 		for _, key := range schema.Fks {
-			if key.Table == rel.from && key.References == rel.to {
+			if key.References == table.name && key.Table == tbl.name {
 				fk = key
-				break
 			}
 		}
 
 		if fk == (Fk{}) {
-			return "", "", fmt.Errorf("no relationship exists between %s and %s. This may be because of a stale schema cache. use POST /schema/invalidate to refresh the cache", rel.from, rel.to)
+			return "", "", err
 		}
+		sel += fmt.Sprintf("json_group_array(json_object(%s)) FILTER (WHERE [%s].[%s] IS NOT NULL) AS [%s], ", aggs, fk.Table, fk.From, tbl.name)
 
-		query += fmt.Sprintf("LEFT JOIN [%s] on [%s].[%s] = [%s].[%s] ", fk.Table, fk.References, fk.To, fk.Table, fk.From)
+		joins += fmt.Sprintf("LEFT JOIN (%s) AS [%s] ON [%s].[%s] = [%s].[%s] ", query, tbl.name, fk.References, fk.To, fk.Table, fk.From)
 	}
 
-	return query, agg, nil
+	return "SELECT " + sel[:len(sel)-2] + fmt.Sprintf(" FROM [%s] ", table.name) + joins, agg[:len(agg)-2], nil
 }
 
-func (schema SchemaCache) buildJSONSel(table string, sels SelMap) (string, string) {
-	var aggregate string
-	query := ""
-	for _, sel := range sels[table] {
-		query += fmt.Sprintf("[%s].[%s]", table, sel.column)
-		if sel.alias != "" {
-			aggregate += fmt.Sprintf("'%s', [%s], ", sel.alias, sel.alias)
-			query += fmt.Sprintf(" AS [%s]", sel.alias)
+func (schema SchemaCache) buildSelCurr(table Table, joinedOn string) (string, string, error) {
+	var sel string
+	var joins string
+	var agg string
+	includesFk := false
+	var fk Fk
+	if joinedOn != "" {
+		for _, key := range schema.Fks {
+			if key.References == joinedOn && key.Table == table.name {
+				fk = key
+			}
+		}
+	}
+
+	fmt.Println(fk)
+
+	for _, col := range table.columns {
+		if joinedOn != "" && fk.Table == table.name && fk.From == col.name {
+			includesFk = true
+		}
+
+		sel += fmt.Sprintf("[%s].[%s], ", table.name, col.name)
+		if col.alias != "" {
+			agg += fmt.Sprintf("'%s', [%s].[%s], ", col.alias, table.name, col.name)
 		} else {
-			aggregate += fmt.Sprintf("'%s', [%s], ", sel.column, sel.column)
+			agg += fmt.Sprintf("'%s', [%s].[%s], ", col.name, table.name, col.name)
 		}
-		query += ", "
 	}
 
-	sels[table] = nil
+	fmt.Println(includesFk)
 
-	for name, cols := range sels {
-		if cols == nil {
-			continue
-		}
-		aggregate += fmt.Sprintf("'%s', [%s], ", name, name)
-		query += "json_group_array(json_object("
-		for _, sel := range cols {
-			if sel.column == "*" {
-
-			}
-
-			if sel.alias != "" {
-				query += fmt.Sprintf("'%s', [%s].[%s], ", sel.alias, name, sel.column)
-			} else {
-				query += fmt.Sprintf("'%s', [%s].[%s], ", sel.column, name, sel.column)
-			}
-		}
-
-		query = query[:len(query)-2] + fmt.Sprintf(")) FILTER(WHERE [%s].[%s] IS NOT NULL) AS [%s], ", name, schema.Pks[name], name)
+	if !includesFk {
+		sel += fmt.Sprintf("[%s].[%s], ", fk.Table, fk.From)
 	}
 
-	return query[:len(query)-2], aggregate[:len(aggregate)-2]
+	for _, tbl := range table.joins {
+		agg += fmt.Sprintf("'%s', [%s], ", tbl.name, tbl.name)
+		query, aggs, err := schema.buildSelCurr(*tbl, table.name)
+		if err != nil {
+			return "", "", err
+		}
+		var fk Fk
+		for _, key := range schema.Fks {
+			if key.References == table.name && key.Table == tbl.name {
+				fk = key
+			}
+		}
+		if fk == (Fk{}) {
+			return "", "", fmt.Errorf("no relationship exists in the schema cache between %s and %s", table.name, tbl.name)
+		}
+
+		sel += fmt.Sprintf("json_group_array(json_object(%s)) FILTER (WHERE [%s].[%s] IS NOT NULL) AS [%s], ", aggs, fk.Table, fk.From, tbl.name)
+
+		joins += fmt.Sprintf("LEFT JOIN (%s) AS [%s] ON [%s].[%s] = [%s].[%s] ", query, tbl.name, fk.References, fk.To, fk.Table, fk.From)
+
+	}
+
+	return "SELECT " + sel[:len(sel)-2] + fmt.Sprintf(" FROM [%s] ", table.name) + joins, agg[:len(agg)-2], nil
 }
 
-func (schema SchemaCache) parseSelect(param string, table string) (SelMap, []relation, error) {
-	sels := make(SelMap)
-	var rels []relation
-	var prevTable string
-	currTable := table
+func (schema SchemaCache) parseSelect(param string, table string) (Table, error) {
+	tbl := Table{table, nil, nil, nil}
+	currTbl := &tbl
 	currStr := ""
 	alias := ""
 	quoted := false
@@ -409,33 +442,31 @@ func (schema SchemaCache) parseSelect(param string, table string) (SelMap, []rel
 				quoted = !quoted
 			case '(':
 				if schema.Tables[currStr] == nil {
-					return nil, nil, InvalidTblErr(currStr)
+					return Table{}, InvalidTblErr(currStr)
 				}
-
-				prevTable = currTable
-				currTable = currStr
+				currTbl = &Table{currStr, nil, nil, currTbl}
+				currTbl.parent.joins = append(currTbl.parent.joins, currTbl)
 				currStr = ""
-				rels = append(rels, relation{currTable, prevTable, alias})
 				alias = ""
 			case ')':
 				if currStr != "" {
-					if currStr != "*" && schema.Tables[currTable][currStr] == "" {
-						return nil, nil, InvalidColErr(currStr, currTable)
+					if currStr != "*" && schema.Tables[currTbl.name][currStr] == "" {
+						return Table{}, InvalidColErr(currStr, currTbl.name)
 					}
-					sels[currTable] = append(sels[currTable], Sel{currStr, alias})
+					currTbl.columns = append(currTbl.columns, column{currStr, alias})
 					currStr = ""
 				}
 				alias = ""
-				currTable = prevTable
+				currTbl = currTbl.parent
 			case ':':
 				alias = currStr
 				currStr = ""
 			case ',':
 				if currStr != "" {
-					if currStr != "*" && schema.Tables[currTable][currStr] == "" {
-						return nil, nil, InvalidColErr(currStr, currTable)
+					if currStr != "*" && schema.Tables[currTbl.name][currStr] == "" {
+						return Table{}, InvalidColErr(currStr, currTbl.name)
 					}
-					sels[currTable] = append(sels[currTable], Sel{currStr, alias})
+					currTbl.columns = append(currTbl.columns, column{currStr, alias})
 					alias = ""
 					currStr = ""
 				}
@@ -446,13 +477,13 @@ func (schema SchemaCache) parseSelect(param string, table string) (SelMap, []rel
 	}
 
 	if currStr != "" {
-		if currStr != "*" && schema.Tables[currTable][currStr] == "" {
-			return nil, nil, InvalidColErr(currStr, currTable)
+		if currStr != "*" && schema.Tables[currTbl.name][currStr] == "" {
+			return Table{}, InvalidColErr(currStr, currTbl.name)
 		}
-		sels[currTable] = append(sels[currTable], Sel{currStr, alias})
+		currTbl.columns = append(currTbl.columns, column{currStr, alias})
 	}
 
-	return sels, rels, nil
+	return tbl, nil
 }
 
 func (schema SchemaCache) buildOrder(table, param string) (string, error) {
@@ -671,15 +702,4 @@ func mapOperator(str string) string {
 	}
 
 	return operators[str]
-}
-
-func dotSeparate(x, y string) string {
-	if x == "" {
-		return fmt.Sprintf("[%s]", y)
-	}
-	if y == "" {
-		return fmt.Sprintf("[%s]", x)
-	}
-
-	return fmt.Sprintf("[%s].[%s]", x, y)
 }
