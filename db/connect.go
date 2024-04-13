@@ -19,7 +19,7 @@ type Response struct {
 // for endpoints that only work with the primary database
 func WithPrimary(handler DbHandler) http.HandlerFunc {
 	return func(wr http.ResponseWriter, req *http.Request) {
-		dao, err := connPrimary()
+		dao, err := ConnPrimary()
 
 		req.Body = http.MaxBytesReader(wr, req.Body, 1048576)
 		if err != nil {
@@ -34,7 +34,7 @@ func WithPrimary(handler DbHandler) http.HandlerFunc {
 		}
 
 		wr.Write(data)
-		defer dao.client.Close()
+		defer dao.Client.Close()
 		defer req.Body.Close()
 
 	}
@@ -58,7 +58,7 @@ func WithDb(handler DbHandler) http.HandlerFunc {
 		}
 
 		wr.Write(data)
-		defer dao.client.Close()
+		defer dao.Client.Close()
 		defer req.Body.Close()
 
 	}
@@ -72,7 +72,7 @@ func respErr(wr http.ResponseWriter, err error) {
 func connDb(req *http.Request) (Database, error) {
 	dbName := req.Header.Get("DB-Name")
 
-	dao, err := connPrimary()
+	dao, err := ConnPrimary()
 	if err != nil {
 		return Database{}, err
 	}
@@ -88,8 +88,15 @@ func connDb(req *http.Request) (Database, error) {
 
 }
 
-func connPrimary() (Database, error) {
+func ConnPrimary() (Database, error) {
+
 	client, err := sql.Open("libsql", "file:atomicdata/primary.db")
+	if err != nil {
+		return Database{}, err
+	}
+
+	schema, err := QueryPrimaryInfo(client)
+
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -100,24 +107,7 @@ func connPrimary() (Database, error) {
 		log.Fatal(err)
 	}
 
-	var schema SchemaCache
-
-	data, err := os.ReadFile("atomicdata/schema.gob")
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			dao := Database{client, SchemaCache{}, 0}
-
-			err = dao.InvalidateSchema()
-
-			return dao, err
-		}
-
-		log.Fatal(err)
-	}
-
-	schema, err = loadSchema(data)
-
-	return Database{client, schema, 0}, err
+	return Database{client, schema, 1}, err
 }
 
 func (dao *Database) connTurso(dbName string) error {
@@ -133,7 +123,7 @@ func (dao *Database) connTurso(dbName string) error {
 		return err
 	}
 	// close the connection with the primary database
-	dao.client.Close()
+	dao.Client.Close()
 
 	client, err := sql.Open("libsql", fmt.Sprintf("libsql://%s-%s.turso.io?authToken=%s", dbName, org, token))
 	if err != nil {
@@ -147,7 +137,7 @@ func (dao *Database) connTurso(dbName string) error {
 	}
 
 	dao.id = id
-	dao.client = client
+	dao.Client = client
 	dao.Schema = schema
 
 	return nil

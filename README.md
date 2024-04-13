@@ -12,10 +12,6 @@ Through the combination of parameterizing values and checking table and column n
 
 This does not always make sql injection impossible though because sqlite allows for table and column names to be anything including malicious sql. This means any changes to a database's schema based on user input must be sanitized before they are executed.
 
-## SDKs
-
-- [javascript SDK](https://github.com/joe-ervin05/atomicbase-js).
-
 ## Contributing
 
 Atomicbase is fully free and open source under the Apache-2.0 license. It is free for any kind of use.

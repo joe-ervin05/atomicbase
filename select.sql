@@ -21,4 +21,3 @@ FROM (
     ) AS [motorcycles] on [users].[id] = [cars].[user_id]
     GROUP BY [users].[id]
 );
-

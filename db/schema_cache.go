@@ -6,37 +6,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"log"
-	"os"
-	"sync"
 )
-
-var lock sync.Mutex
-
-// TODO join all the schema queries into one query with multiple joins
-
-func querySchema(db *sql.DB) (SchemaCache, error) {
-	var fks []Fk
-	tblMap := make(TblMap)
-	pkMap := make(map[string]string)
-
-	rows, err := db.Query(`
-		SELECT m.name as "table", f."table" as "references", f."from", f."to", l.name as col, l.type as colType, p.name as pk
-		FROM sqlite_master m
-		JOIN pragma_foreign_key_list(m.name) f ON m.name != f."table"
-		JOIN pragma_table_info(m.name) l
-		JOIN pragma_table_info(m.name) p ON p.pk = 1
-		WHERE m.type = 'table'
-		ORDER BY m.name;
-	`)
-	if err != nil {
-		return SchemaCache{}, err
-	}
-
-	_ = rows
-
-	return SchemaCache{tblMap, pkMap, fks}, nil
-
-}
 
 func schemaFks(db *sql.DB) ([]Fk, error) {
 
@@ -107,35 +77,19 @@ func schemaCols(db *sql.DB) (TblMap, map[string]string, error) {
 }
 
 func (dao Database) saveSchema() error {
-	if dao.id == 0 {
-		// prevent concurrent writes
-		lock.Lock()
-		defer lock.Unlock()
+	var client *sql.DB
+	var err error
 
-		var buf bytes.Buffer
-
-		file, err := os.Create("atomicdata/schema.gob")
+	if dao.id == 1 {
+		client = dao.Client
+	} else {
+		client, err = sql.Open("libsql", "file:atomicdata/primary.db")
 		if err != nil {
-			return err
+			log.Fatal(err)
 		}
-		defer file.Close()
-
-		enc := gob.NewEncoder(&buf)
-
-		err = enc.Encode(dao.Schema)
-		if err != nil {
-			return err
-		}
-
-		_, err = file.Write(buf.Bytes())
-
-		return err
 	}
 
-	client, err := sql.Open("libsql", "file:atomicdata/primary.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	defer client.Close()
 
 	err = client.Ping()
 

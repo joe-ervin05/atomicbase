@@ -1,7 +1,9 @@
 package db
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"log"
@@ -12,10 +14,9 @@ import (
 )
 
 type Database struct {
-	client *sql.DB
+	Client *sql.DB
 	Schema SchemaCache
-	// id 0 means primary db
-	id int32
+	id     int32
 }
 
 type SchemaCache struct {
@@ -53,21 +54,41 @@ func init() {
 		log.Fatal(err)
 	}
 
-	client.Exec(`
+	tbls := make(map[string]map[string]string)
+	tbls["databases"] = map[string]string{
+		"id":     "INTEGER",
+		"name":   "TEXT",
+		"token":  "TEXT",
+		"schema": "BLOB",
+	}
+
+	pks := make(map[string]string)
+	pks["databases"] = "id"
+
+	var buf bytes.Buffer
+	schema := SchemaCache{tbls, pks, nil}
+	gob.NewEncoder(&buf).Encode(schema)
+
+	_, err = client.Exec(`
 	CREATE TABLE IF NOT EXISTS databases 
 	(
 		id INTEGER PRIMARY KEY, 
-		name TEXT NOT NULL UNIQUE, 
-		token TEXT NOT NULL UNIQUE,
+		name TEXT UNIQUE, 
+		token TEXT,
 		schema BLOB
 	);
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_databases_name ON databases (name);
-	`)
+	INSERT INTO databases (id, schema) values(1, ?) ON CONFLICT (id) DO NOTHING;
+	`, buf.Bytes())
+
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func (dao Database) QueryDbInfo(dbName string) (int32, string, SchemaCache, error) {
 
-	row := dao.client.QueryRow("SELECT id, token, schema from databases WHERE name = ?", dbName)
+	row := dao.Client.QueryRow("SELECT id, token, schema from databases WHERE name = ?", dbName)
 
 	var id sql.NullInt32
 	var token sql.NullString
@@ -87,8 +108,26 @@ func (dao Database) QueryDbInfo(dbName string) (int32, string, SchemaCache, erro
 
 }
 
+func QueryPrimaryInfo(db *sql.DB) (SchemaCache, error) {
+
+	row := db.QueryRow("SELECT schema from databases WHERE id = 1")
+	var sData []byte
+
+	err := row.Scan(&sData)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return SchemaCache{}, errors.New("database not found")
+		}
+		return SchemaCache{}, err
+	}
+
+	schema, err := loadSchema(sData)
+
+	return schema, err
+}
+
 func (dao Database) QueryMap(query string, args ...any) ([]interface{}, error) {
-	rows, err := dao.client.Query(query, args...)
+	rows, err := dao.Client.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -158,13 +197,10 @@ func (dao Database) QueryMap(query string, args ...any) ([]interface{}, error) {
 }
 
 func (dao Database) QueryJSON(query string, args ...any) ([]byte, error) {
-	type queryData struct {
-		Data []interface{} `json:"data"`
-	}
 	m, err := dao.QueryMap(query, args...)
 	if err != nil {
 		return nil, err
 	}
 
-	return json.Marshal(&(queryData{m}))
+	return json.Marshal(&m)
 }

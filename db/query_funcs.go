@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
+	"io"
 	"net/url"
 )
 
@@ -20,9 +20,10 @@ type column struct {
 	alias string
 }
 
-func (dao Database) SelectRows(req *http.Request) ([]byte, error) {
-	params := req.URL.Query()
-	table := req.PathValue("table")
+func (dao Database) SelectRows(table string, params url.Values) ([]byte, error) {
+	if dao.id == 1 && table == "databases" {
+		return nil, errors.New("table databases is not queryable")
+	}
 
 	if dao.Schema.Tables[table] == nil {
 		return nil, InvalidTblErr(table)
@@ -34,6 +35,12 @@ func (dao Database) SelectRows(req *http.Request) ([]byte, error) {
 
 	if params["select"] != nil {
 		sel = params["select"][0]
+
+		if sel == "" {
+			sel = "*"
+		}
+	} else {
+		sel = "*"
 	}
 
 	sel, agg, err := dao.Schema.buildSelect(sel, table)
@@ -65,7 +72,7 @@ func (dao Database) SelectRows(req *http.Request) ([]byte, error) {
 	fmt.Printf("SELECT json_group_array(json_object(%s)) AS data FROM (%s)", agg, query)
 	fmt.Println(args)
 
-	row := dao.client.QueryRow(fmt.Sprintf("SELECT json_group_array(json_object(%s)) AS data FROM (%s)", agg, query), args...)
+	row := dao.Client.QueryRow(fmt.Sprintf("SELECT json_group_array(json_object(%s)) AS data FROM (%s)", agg, query), args...)
 	if row.Err() != nil {
 		return nil, row.Err()
 	}
@@ -77,16 +84,13 @@ func (dao Database) SelectRows(req *http.Request) ([]byte, error) {
 	return res, err
 }
 
-func (dao Database) DeleteRows(req *http.Request) ([]byte, error) {
-
-	table := req.PathValue("table")
-	params := req.URL.Query()
+func (dao Database) DeleteRows(table string, params url.Values) ([]byte, error) {
 
 	if dao.Schema.Tables[table] == nil {
 		return nil, InvalidTblErr(table)
 	}
 
-	query := "DELETE FROM [" + table + "] "
+	query := fmt.Sprintf("DELETE FROM [%s] ", table)
 
 	where, args, err := dao.Schema.buildWhere(table, params)
 	if err != nil {
@@ -109,23 +113,18 @@ func (dao Database) DeleteRows(req *http.Request) ([]byte, error) {
 		return dao.QueryJSON(query, args...)
 	}
 
-	_, err = dao.client.Exec(query, args...)
+	_, err = dao.Client.Exec(query, args...)
 
 	return nil, err
 }
 
-func (dao Database) InsertRows(req *http.Request) ([]byte, error) {
-	table := req.PathValue("table")
+func (dao Database) InsertRows(table string, params url.Values, body io.ReadCloser, upsert bool) ([]byte, error) {
 
 	if dao.Schema.Tables[table] == nil {
 		return nil, InvalidTblErr(table)
 	}
 
-	params := req.URL.Query()
-	dec := json.NewDecoder(req.Body)
-	dec.DisallowUnknownFields()
-
-	upsert := req.Header.Get("Prefer") == "resolution=merge-duplicates"
+	dec := json.NewDecoder(body)
 
 	query := ""
 	var args []any
@@ -175,20 +174,18 @@ func (dao Database) InsertRows(req *http.Request) ([]byte, error) {
 		return dao.QueryJSON(query, args...)
 	}
 
-	_, err := dao.client.Exec(query, args...)
+	_, err := dao.Client.Exec(query, args...)
 
 	return nil, err
 }
 
-func (dao Database) UpdateRows(req *http.Request) ([]byte, error) {
-	table := req.PathValue("table")
+func (dao Database) UpdateRows(table string, params url.Values, body io.ReadCloser) ([]byte, error) {
 
 	if dao.Schema.Tables[table] == nil {
 		return nil, InvalidTblErr(table)
 	}
 
-	params := req.URL.Query()
-	dec := json.NewDecoder(req.Body)
+	dec := json.NewDecoder(body)
 	dec.DisallowUnknownFields()
 
 	var cols map[string]any
@@ -234,7 +231,7 @@ func (dao Database) UpdateRows(req *http.Request) ([]byte, error) {
 		return dao.QueryJSON(query, args...)
 	}
 
-	_, err = dao.client.Exec(query, args...)
+	_, err = dao.Client.Exec(query, args...)
 
 	return nil, err
 }
@@ -247,7 +244,7 @@ func buildUpsert(colSlice []map[string]any, table string, pk string) (string, []
 
 	colI := 0
 	for col := range colSlice[0] {
-		query += col + ", "
+		query += fmt.Sprintf("[%s], ", col)
 		valHolder += "?, "
 
 		for i, cols := range colSlice {
@@ -273,7 +270,7 @@ func buildUpsert(colSlice []map[string]any, table string, pk string) (string, []
 
 	for col := range colSlice[0] {
 		if col != pk {
-			query += col + " = excluded." + col + ", "
+			query += col + " = excluded.[" + col + "], "
 		}
 	}
 
@@ -308,10 +305,6 @@ func buildInsert(cols map[string]any, table string) (string, []any, error) {
 
 func (schema SchemaCache) buildSelect(param string, table string) (string, string, error) {
 
-	if param == "" || param == "*" {
-		return "SELECT * FROM " + table, "", nil
-	}
-
 	tbls, err := schema.parseSelect(param, table)
 	if err != nil {
 		return "", "", err
@@ -324,6 +317,10 @@ func (schema SchemaCache) buildOuterAgg(table Table) (string, string, error) {
 	agg := ""
 	sel := ""
 	joins := ""
+
+	if table.columns == nil && table.joins == nil {
+		table.columns = []column{{"*", ""}}
+	}
 
 	for _, col := range table.columns {
 		if col.name == "*" {
@@ -344,7 +341,7 @@ func (schema SchemaCache) buildOuterAgg(table Table) (string, string, error) {
 	}
 
 	for _, tbl := range table.joins {
-		agg += fmt.Sprintf("'%s', [%s], ", tbl.name, tbl.name)
+		agg += fmt.Sprintf("'%s', json([%s]), ", tbl.name, tbl.name)
 		query, aggs, err := schema.buildSelCurr(*tbl, table.name)
 		if err != nil {
 			return "", "", err
@@ -373,6 +370,11 @@ func (schema SchemaCache) buildSelCurr(table Table, joinedOn string) (string, st
 	var agg string
 	includesFk := false
 	var fk Fk
+
+	if table.columns == nil && table.joins == nil {
+		table.columns = []column{{"*", ""}}
+	}
+
 	if joinedOn != "" {
 		for _, key := range schema.Fks {
 			if key.References == joinedOn && key.Table == table.name {
@@ -408,7 +410,7 @@ func (schema SchemaCache) buildSelCurr(table Table, joinedOn string) (string, st
 	}
 
 	for _, tbl := range table.joins {
-		agg += fmt.Sprintf("'%s', [%s], ", tbl.name, tbl.name)
+		agg += fmt.Sprintf("'%s', json([%s]), ", tbl.name, tbl.name)
 		query, aggs, err := schema.buildSelCurr(*tbl, table.name)
 		if err != nil {
 			return "", "", err

@@ -3,7 +3,7 @@ package db
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
+	"io"
 	"strings"
 )
 
@@ -29,11 +29,11 @@ type NewColumn struct {
 
 func (dao *Database) InvalidateSchema() error {
 
-	cols, pks, err := schemaCols(dao.client)
+	cols, pks, err := schemaCols(dao.Client)
 	if err != nil {
 		return err
 	}
-	fks, err := schemaFks(dao.client)
+	fks, err := schemaFks(dao.Client)
 	if err != nil {
 		return err
 	}
@@ -43,15 +43,13 @@ func (dao *Database) InvalidateSchema() error {
 	return dao.saveSchema()
 }
 
-func (dao Database) AlterTable(req *http.Request) error {
+func (dao Database) AlterTable(table string, body io.ReadCloser) error {
 	type tblChanges struct {
 		NewName       string               `json:"newName"`
 		RenameColumns map[string]string    `json:"renameColumns"`
 		NewColumns    map[string]NewColumn `json:"newColumns"`
 		DropColums    []string             `json:"dropColumns"`
 	}
-
-	table := req.PathValue("tableName")
 
 	if dao.Schema.Tables[table] == nil {
 		return InvalidTblErr(table)
@@ -60,7 +58,7 @@ func (dao Database) AlterTable(req *http.Request) error {
 	query := ""
 
 	var changes tblChanges
-	err := json.NewDecoder(req.Body).Decode(&changes)
+	err := json.NewDecoder(body).Decode(&changes)
 	if err != nil {
 		return err
 	}
@@ -144,7 +142,7 @@ func (dao Database) AlterTable(req *http.Request) error {
 
 	fmt.Println(query)
 
-	_, err = dao.client.Exec(query)
+	_, err = dao.Client.Exec(query)
 	if err != nil {
 		return err
 	}
@@ -152,13 +150,12 @@ func (dao Database) AlterTable(req *http.Request) error {
 	return dao.InvalidateSchema()
 }
 
-func (dao Database) CreateTable(req *http.Request) error {
-	name := req.PathValue("tableName")
-	query := "CREATE TABLE [" + name + "] ("
+func (dao Database) CreateTable(table string, body io.ReadCloser) error {
+	query := "CREATE TABLE [" + table + "] ("
 
 	var cols map[string]Column
 
-	err := json.NewDecoder(req.Body).Decode(&cols)
+	err := json.NewDecoder(body).Decode(&cols)
 	if err != nil {
 		return err
 	}
@@ -232,7 +229,7 @@ func (dao Database) CreateTable(req *http.Request) error {
 
 	query = query[:len(query)-2] + ")"
 
-	_, err = dao.client.Exec(query)
+	_, err = dao.Client.Exec(query)
 	if err != nil {
 		return err
 	}
@@ -240,14 +237,13 @@ func (dao Database) CreateTable(req *http.Request) error {
 	return dao.InvalidateSchema()
 }
 
-func (dao Database) DropTable(req *http.Request) error {
-	name := req.PathValue("tableName")
+func (dao Database) DropTable(table string) error {
 
-	if dao.Schema.Tables[name] == nil {
-		return InvalidTblErr(name)
+	if dao.Schema.Tables[table] == nil {
+		return InvalidTblErr(table)
 	}
 
-	_, err := dao.client.Exec("DROP TABLE " + name)
+	_, err := dao.Client.Exec("DROP TABLE " + table)
 	if err != nil {
 		return err
 	}
@@ -255,20 +251,20 @@ func (dao Database) DropTable(req *http.Request) error {
 	return dao.InvalidateSchema()
 }
 
-func (dao Database) EditSchema(req *http.Request) error {
-	type body struct {
+func (dao Database) EditSchema(body io.ReadCloser) error {
+	type reqBody struct {
 		Query string `json:"query"`
 		Args  []any  `json:"args"`
 	}
 
-	var bod body
+	var bod reqBody
 
-	err := json.NewDecoder(req.Body).Decode(&bod)
+	err := json.NewDecoder(body).Decode(&bod)
 	if err != nil {
 		return err
 	}
 
-	_, err = dao.client.Exec(bod.Query, bod.Args...)
+	_, err = dao.Client.Exec(bod.Query, bod.Args...)
 	if err != nil {
 		return err
 	}
